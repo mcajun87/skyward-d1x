@@ -1,4 +1,4 @@
-name: Rocky7842_OTA_provider
+name: skyward_d1x
 
 permissions:
   contents: write
