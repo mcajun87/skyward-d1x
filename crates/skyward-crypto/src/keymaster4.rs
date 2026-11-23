@@ -7,7 +7,9 @@
 
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
+#[allow(unused_imports)]
 use anyhow::{Context, Result, bail};
+#[allow(unused_imports)]
 use skyward_binder::hidl::{Answer, Message};
 
 /// The hardware service, as it registers with the hardware directory.
@@ -47,6 +49,7 @@ const ALGORITHM_AES: i32 = 32;
 
 /// The two keys a hardware auth token carries in its MAC, and the length
 /// the service expects. An empty token has no MAC and every number zero.
+#[allow(dead_code)]
 const AUTH_MAC_LENGTH: usize = 32;
 
 /// What the service says about itself.
@@ -116,7 +119,7 @@ impl<'a> Keymaster<'a> {
             let parameters = read
                 .vector()
                 .context("read the authorizations that came back")?;
-            for parameter in parameters.chunks_exact(32) {
+            for parameter in parameters.as_chunks::<32>().0 {
                 let tag = i32::from_le_bytes(parameter[0..4].try_into().expect("four bytes"));
                 let value = i32::from_le_bytes(parameter[8..12].try_into().expect("four bytes"));
                 out.push((tag, value as i64));
@@ -670,6 +673,7 @@ fn params(app_id: &[u8], nonce: &[u8]) -> Vec<Param> {
     params
 }
 
+#[allow(dead_code)]
 fn empty_vec(p: &mut Message) {
     p.u64(0); // buffer
     p.u64(0); // size
@@ -704,6 +708,21 @@ fn empty_verification_token(p: &mut Message) {
     p.struct_with_tail_vec(&head, &[], 24); // mac at offset 24
 }
 
+/// Let the wrapped-key reader use this service exactly as it uses the
+/// newer one: what it needs is only AES-GCM unwrapping.
+#[cfg(target_os = "android")]
+impl crate::keystore::Decryptor for Keymaster<'_> {
+    fn gcm_decrypt(
+        &self,
+        key_blob: &[u8],
+        app_id: &[u8],
+        nonce: &[u8],
+        body: &[u8],
+    ) -> Result<Vec<u8>> {
+        Keymaster::gcm_decrypt(self, key_blob, app_id, nonce, body)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -730,17 +749,3 @@ mod tests {
     }
 }
 
-/// Let the wrapped-key reader use this service exactly as it uses the
-/// newer one: what it needs is only AES-GCM unwrapping.
-#[cfg(target_os = "android")]
-impl crate::keystore::Decryptor for Keymaster<'_> {
-    fn gcm_decrypt(
-        &self,
-        key_blob: &[u8],
-        app_id: &[u8],
-        nonce: &[u8],
-        body: &[u8],
-    ) -> Result<Vec<u8>> {
-        Keymaster::gcm_decrypt(self, key_blob, app_id, nonce, body)
-    }
-}

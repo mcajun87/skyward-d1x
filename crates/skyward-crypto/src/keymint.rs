@@ -414,7 +414,7 @@ impl<'a> KeyService<'a> {
         // A phone that serves KeyMint has no keymaster 4.0 to find, and the
         // failed lookup costs nothing.
         match crate::keymaster4::Keymaster::open(hardware) {
-            Ok(service) => return Ok(KeyService::Hidl(service)),
+            Ok(service) => Ok(KeyService::Hidl(service)),
             Err(hidl) => match KeyMint::open(hardware) {
                 Ok(service) => Ok(KeyService::Aidl(service)),
                 Err(aidl) => bail!(

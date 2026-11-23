@@ -1022,7 +1022,7 @@ fn start_supplicant(cfg: &Config, libraries: Option<&Path>) -> Result<Child> {
                 })
                 .map(str::to_owned)
                 .collect();
-            lines.insert(0, format!("update_config=1"));
+            lines.insert(0, "update_config=1".to_string());
             lines.insert(0, format!("ctrl_interface={}", sockets.display()));
             format!("{}\n", lines.join("\n"))
         }

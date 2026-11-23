@@ -252,10 +252,10 @@ fn d1x_details() -> Vec<MountDetails> {
     };
     vec![
         d("ext4", "/dev/block/dm-0", Some("dm-0"), 5 * gb, 4 * gb, Some(true), true),
-        d("ext4", "/dev/block/dm-1", Some("dm-1"), 1 * gb, 700_000_000, Some(true), true),
+        d("ext4", "/dev/block/dm-1", Some("dm-1"), gb, 700_000_000, Some(true), true),
         d("ext4", "/dev/block/dm-2", Some("dm-2"), 3 * gb, 2 * gb, Some(true), true),
         d("ext4", "/dev/block/dm-3", Some("dm-3"), 3 * gb, 2 * gb, Some(true), true),
-        d("ext4", "/dev/block/dm-4", Some("dm-4"), 1 * gb, 600_000_000, Some(true), true),
+        d("ext4", "/dev/block/dm-4", Some("dm-4"), gb, 600_000_000, Some(true), true),
         d("ext4", "/dev/block/sda29", None, 64 * 1_000_000, 3 * 1_000_000, Some(false), true),
         d("ext4", "/dev/block/sda31", None, 20 * 1_000_000, 8 * 1_000_000, Some(false), true),
         d("ext4", "/dev/block/sda32", None, 32 * 1_000_000, 4 * 1_000_000, Some(false), true),

@@ -201,10 +201,10 @@ impl Face {
             let scaled = source.font.as_scaled(scale);
             let k = em_px / source.upem;
             let (id, advance) = source.glyph(ch, scale);
-            if let Some((p, previous)) = prev {
-                if std::ptr::eq(previous, source) {
-                    pen += scaled.kern(p, id);
-                }
+            if let Some((p, previous)) = prev
+                && std::ptr::eq(previous, source)
+            {
+                pen += scaled.kern(p, id);
             }
             if let Some(o) = source.font.outline(id) {
                 span = (

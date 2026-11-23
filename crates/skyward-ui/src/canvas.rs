@@ -1255,10 +1255,10 @@ impl Canvas {
                 (source, source.scale(px))
             };
             let (id, advance) = source.glyph(ch, scale);
-            if let Some((p, previous)) = prev {
-                if std::ptr::eq(previous, source) {
-                    w += source.font.as_scaled(scale).kern(p, id);
-                }
+            if let Some((p, previous)) = prev
+                && std::ptr::eq(previous, source)
+            {
+                w += source.font.as_scaled(scale).kern(p, id);
             }
             w += advance;
             prev = Some((id, source));
@@ -1324,10 +1324,10 @@ impl Canvas {
                 (source, source.scale(px))
             };
             let (id, aw) = source.glyph(ch, scale);
-            if let Some((p, previous)) = prev {
-                if std::ptr::eq(previous, source) {
-                    pen += source.font.as_scaled(scale).kern(p, id);
-                }
+            if let Some((p, previous)) = prev
+                && std::ptr::eq(previous, source)
+            {
+                pen += source.font.as_scaled(scale).kern(p, id);
             }
             if let Some(lim) = limit {
                 let more = i + 1 < chars.len();

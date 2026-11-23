@@ -1,6 +1,8 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand};
-use skyward_config::{DeviceConfig, ramdisk};
+use skyward_config::DeviceConfig;
+#[cfg(target_os = "android")]
+use skyward_config::ramdisk;
 #[cfg(target_os = "android")]
 use skyward_programs::secure::Started;
 use skyward_sys::{Power, bcb};
@@ -79,6 +81,7 @@ enum Cmd {
         names: Vec<String>,
     },
     /// Run as the recovery service (what init starts as /system/bin/recovery).
+    #[cfg(target_os = "android")]
     Recovery,
     /// Reboot through init: system, recovery, fastboot, bootloader, edl, or
     /// off.
@@ -107,17 +110,23 @@ enum Cmd {
     /// Map the booted slot's partitions from super and mount them read-only.
     Mount,
     /// Map and mount every partition in super on a phone without slots.
+    #[cfg(target_os = "android")]
     MountAonly,
     /// Ask the phone's older key service what it is.
+    #[cfg(target_os = "android")]
     KeymasterInfo,
     /// Unwrap the metadata key through the phone's older key service.
+    #[cfg(target_os = "android")]
     KeymasterDecrypt,
     /// Ask the phone's older key service what the metadata key may do.
+    #[cfg(target_os = "android")]
     KeymasterAuth,
     /// Probe keymaster's begin method numbers with no parameters.
+    #[cfg(target_os = "android")]
     KeymasterProbe,
     /// Ask the network on an interface for an address and set it, as the
     /// WLAN page does once a network is joined.
+    #[cfg(target_os = "android")]
     WlanDhcp {
         /// The interface, wlan0 on the phones configured so far.
         #[arg(long, default_value = "wlan0")]
@@ -245,6 +254,7 @@ fn main() -> Result<()> {
     // init starts the recovery service by path with no arguments.
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();
+    #[cfg(target_os = "android")]
     if name == "recovery" {
         return recovery();
     }
@@ -269,6 +279,7 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        #[cfg(target_os = "android")]
         Cmd::Recovery => recovery(),
         Cmd::Reboot { target } => {
             let p = Power::parse(&target).ok_or_else(|| anyhow!("unknown target {target:?}"))?;
@@ -298,6 +309,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Identify { file } => identify(&file),
+        #[cfg(target_os = "android")]
         Cmd::KeymasterProbe => {
             use std::fs;
             let hardware = skyward_binder::driver::Binder::hardware()?;
@@ -328,6 +340,7 @@ fn main() -> Result<()> {
             println!("{}", service.probe_upgrade(&blob)?);
             Ok(())
         }
+        #[cfg(target_os = "android")]
         Cmd::KeymasterAuth => {
             use std::fs;
             let hardware = skyward_binder::driver::Binder::hardware()?;
@@ -344,6 +357,7 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        #[cfg(target_os = "android")]
         Cmd::KeymasterDecrypt => {
             use skyward_crypto::keystore::{StoredKey, Unwrap};
             let hardware = skyward_binder::driver::Binder::hardware()?;
@@ -354,6 +368,7 @@ fn main() -> Result<()> {
             println!("metadata key: {} bytes", key.len());
             Ok(())
         }
+        #[cfg(target_os = "android")]
         Cmd::KeymasterInfo => {
             let hardware = skyward_binder::driver::Binder::hardware()?;
             let service = skyward_crypto::keymaster4::Keymaster::open(&hardware)?;
@@ -364,6 +379,7 @@ fn main() -> Result<()> {
             );
             Ok(())
         }
+        #[cfg(target_os = "android")]
         Cmd::WlanDhcp { interface } => {
             use std::sync::atomic::AtomicBool;
             let mac = skyward_net::iface::hardware_address(&interface)?;
@@ -376,6 +392,7 @@ fn main() -> Result<()> {
             );
             Ok(())
         }
+        #[cfg(target_os = "android")]
         Cmd::MountAonly => {
             let mounts = skyward_vab::mount_partitions_aonly()?;
             for d in &mounts.damaged {
@@ -659,7 +676,7 @@ fn main() -> Result<()> {
             // keys are read from the partitions again, as it read them;
             // where they do not show, it started none.
             let mut programs = cfg.services.clone();
-            match found_keys(secure::libraries()?.as_deref()).and_then(|found| Ok(found.steps?)) {
+            match found_keys(secure::libraries()?.as_deref()).and_then(|found| found.steps) {
                 Ok(steps) => programs.extend(keys::programs(&steps)),
                 Err(e) => eprintln!("the programs of the phone's keys are not known: {e:#}"),
             }
@@ -682,6 +699,7 @@ fn booted_slot() -> Result<skyward_vab::Slot> {
 
 /// What the installed system says to do to use the phone's keys, reading
 /// the slot's build where it keeps one and the unsuffixed build otherwise.
+#[cfg(target_os = "android")]
 fn found_keys(libraries: Option<&std::path::Path>) -> Result<keys::Found> {
     match skyward_vab::current_slot()? {
         Some(slot) => keys::found(slot, libraries),
@@ -1105,6 +1123,7 @@ fn adopt_installed_version(props: &std::collections::HashMap<String, String>) ->
 /// goes on stays in misc until the work is done; any other is cleared at
 /// once, so that any reboot from here boots the system. Failures go to the
 /// kernel log and still end the process, which init then starts again.
+#[cfg(target_os = "android")]
 fn recovery() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let run = || -> Result<()> {
@@ -1139,7 +1158,7 @@ fn recovery() -> Result<()> {
         // before the screen was ever drawn. Do it aside, and let every
         // failure go to the log: the pages must come up even if USB does
         // not.
-        std::thread::spawn(|| {
+        let _usb = std::thread::spawn(|| {
             if skyward_sys::prop("sys.usb.state").is_some_and(|s| s != "adb")
                 && let Err(e) =
                     skyward_sys::usb::set("none", std::time::Duration::from_secs(5))

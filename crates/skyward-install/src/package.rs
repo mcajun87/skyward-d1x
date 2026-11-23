@@ -183,10 +183,11 @@ pub fn check(update: &Update, phone: &Phone) -> Result<(), Refusal> {
     // one running; update_engine then checks the payload against the
     // partitions itself. A package for another source build is refused
     // here, before anything is written.
-    if let Some(pre) = m.get("pre-build-incremental") {
-        if !phone.incremental.is_empty() && pre != phone.incremental {
-            return Err(Refusal::Incremental);
-        }
+    if let Some(pre) = m.get("pre-build-incremental")
+        && !phone.incremental.is_empty()
+        && pre != phone.incremental
+    {
+        return Err(Refusal::Incremental);
     }
     let Some(build) = &phone.installed else {
         return Ok(());
