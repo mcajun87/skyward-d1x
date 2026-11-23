@@ -421,10 +421,12 @@ fn main() -> Result<()> {
                 Some(slot) => skyward_info::installed_props(slot)?,
                 None => skyward_info::installed_props_aonly()?,
             };
-            let services: Vec<Started> = DeviceConfig::load(&config)?
+            let cfg = DeviceConfig::load(&config)?;
+            let services: Vec<Started> = cfg
                 .services
-                .into_iter()
+                .iter()
                 .filter(|s| s.runs_on(&props))
+                .cloned()
                 .map(Started::from)
                 .collect();
             let libraries = secure::libraries()?;
@@ -432,6 +434,7 @@ fn main() -> Result<()> {
             keys::start(
                 &found_keys(libraries.as_deref())?.steps?,
                 libraries.as_deref(),
+                &module_folders(&cfg)?,
             )?;
             loop {
                 std::thread::park();
@@ -740,14 +743,19 @@ fn lp(super_dev: &Path, slot: Option<u32>) -> Result<()> {
 }
 
 /// Load `names` from the module sources the configuration lists.
-fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
-    let dirs = cfg
-        .modules
+/// The folders of the module sources the configuration lists, in the
+/// order a module is looked for in them.
+fn module_folders(cfg: &DeviceConfig) -> Result<Vec<PathBuf>> {
+    cfg.modules
         .sources
         .iter()
         .map(|s| skyward_modules::source_dir(s))
-        .collect::<Result<Vec<_>>>()?;
-    skyward_modules::load(&dirs, names)
+        .collect()
+}
+
+/// Load `names` from the module sources the configuration lists.
+fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
+    skyward_modules::load(&module_folders(cfg)?, names)
 }
 
 /// Start the recovery's own logd where it needs libraries of the installed
@@ -896,7 +904,7 @@ fn bring_up(
             line.replace("\n  ", ", ")
         ))?;
     }
-    keys::start(&steps, libraries.as_deref())?;
+    keys::start(&steps, libraries.as_deref(), &module_folders(cfg)?)?;
     agree_on_the_notes_key(&registering)
 }
 
@@ -1107,11 +1115,10 @@ fn recovery() -> Result<()> {
         std::fs::set_permissions(skyward_sys::RUN, std::fs::Permissions::from_mode(0o755))
             .with_context(|| format!("open {} to the recovery's other users", skyward_sys::RUN))?;
         skyward_sys::keep_log(Path::new(skyward_sys::LOG))?;
-        // A recovery that ended with a function of its own in the port took
-        // the port with it; going through "none" takes that function off.
-        if skyward_sys::prop("sys.usb.state").is_some_and(|s| s != "adb") {
-            skyward_sys::usb::set("none", std::time::Duration::from_secs(5))?;
-        }
+        // Say where we are before touching the port: a failure here must
+        // leave a trace in the recovery log even when the screen is still
+        // black.
+        let _ = skyward_sys::kmsg("recovery service starting");
         // adbd opens a port on the network as well as the cable when this is
         // set before it starts. USB stays the way it was, so both ways in
         // work: the cable for copying, the network while the phone charges
@@ -1125,7 +1132,24 @@ fn recovery() -> Result<()> {
         if let Err(e) = skyward_sys::set_prop("service.adb.tcp.port", port) {
             let _ = skyward_sys::kmsg(&format!("the ADB network port is not set: {e:#}"));
         }
-        skyward_sys::set_prop("sys.usb.config", "adb")?;
+        // A recovery that ended with a function of its own in the port took
+        // the port with it; going through "none" takes that function off.
+        // On some phones init can take longer than five seconds to stop
+        // adbd, and the old synchronous `?` made the whole recovery exit
+        // before the screen was ever drawn. Do it aside, and let every
+        // failure go to the log: the pages must come up even if USB does
+        // not.
+        std::thread::spawn(|| {
+            if skyward_sys::prop("sys.usb.state").is_some_and(|s| s != "adb")
+                && let Err(e) =
+                    skyward_sys::usb::set("none", std::time::Duration::from_secs(5))
+            {
+                let _ = skyward_sys::kmsg(&format!("the USB port was not reset: {e:#}"));
+            }
+            if let Err(e) = skyward_sys::set_prop("sys.usb.config", "adb") {
+                let _ = skyward_sys::kmsg(&format!("the USB port was not given to adb: {e:#}"));
+            }
+        });
         let misc = bcb::misc();
         let message = bcb::read(&misc)?;
         let request = message.request();

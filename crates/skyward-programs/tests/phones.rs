@@ -60,6 +60,7 @@ fn names(steps: &[Step]) -> Vec<&str> {
         .map(|step| match step {
             Step::Start(started) => started.service.path.rsplit('/').next().unwrap(),
             Step::Write { path, .. } => path,
+            Step::Drive(driver) => driver.module,
             Step::ServeElements => "(the secure element service)",
         })
         .collect()

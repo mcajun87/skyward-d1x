@@ -57,16 +57,31 @@ enum Through {
     Own(&'static str),
 }
 
+/// The driver of the chip a secure element is in: the kernel module it is,
+/// which the phone loads as it boots and a recovery leaves out, and the
+/// device node it makes, which the secure element's own service opens as
+/// the account the phone's rules for its nodes give it to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Driver {
+    pub module: &'static str,
+    pub node: &'static str,
+}
+
+/// The driver of NXP's NFC controller, which NXP's secure element is in.
+const NXP_CONTROLLER: Driver = Driver { module: "nxp-nci", node: "/dev/nq-nci" };
+
 /// The makes of weaver, each by what the name of its program ends in, the
-/// longer endings first: Thales' and NXP's go through Android's secure
+/// longer endings first, with the driver its secure element takes where a
+/// recovery has to load one: Thales' and NXP's go through Android's secure
 /// element service, and Goodix's, whose program is named after no maker,
 /// through Goodix's own.
-const WEAVERS: [(&str, Through); 3] = [
-    (".thales", Through::ElementService),
-    (".nxp-qti", Through::ElementService),
+const WEAVERS: [(&str, Through, Option<Driver>); 3] = [
+    (".thales", Through::ElementService, None),
+    (".nxp-qti", Through::ElementService, Some(NXP_CONTROLLER)),
     (
         "weaver-service",
         Through::Own("vendor.goodix.hardware.secure_element_aidl.IGdxEse"),
+        None,
     ),
 ];
 
@@ -169,6 +184,9 @@ pub enum Step {
         path: &'static str,
         value: &'static str,
     },
+    /// Load the driver of the chip a secure element is in, and give the
+    /// node it makes to whom the phone's own rules give it.
+    Drive(Driver),
     /// Serve Android's secure element service, with a reader for each
     /// secure element whose own service has registered by then.
     ServeElements,
@@ -377,7 +395,7 @@ pub fn programs(steps: &[Step]) -> Vec<&Started> {
         .iter()
         .filter_map(|step| match step {
             Step::Start(started) => Some(started.as_ref()),
-            Step::Write { .. } | Step::ServeElements => None,
+            Step::Write { .. } | Step::Drive(_) | Step::ServeElements => None,
         })
         .collect()
 }
@@ -390,15 +408,16 @@ fn weaver(phone: &Phone) -> Result<Vec<Step>> {
         file.contains("weaver-service")
     })?;
     let file = file_name(program);
-    let (_, through) = WEAVERS
+    let (_, through, driver) = WEAVERS
         .iter()
-        .find(|(ending, _)| file.ends_with(ending))
+        .find(|(ending, ..)| file.ends_with(ending))
         .with_context(|| {
             format!(
                 "{} is a weaver of a make the recovery does not know",
                 program.path
             )
         })?;
+    out.extend(driver.map(Step::Drive));
     match through {
         Through::Own(interface) => {
             let own = phone

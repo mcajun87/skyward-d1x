@@ -8,10 +8,16 @@ on:
     - cron: '0 0 * * *' # 每天北京时间早上 8:00 自动运行一次
   workflow_dispatch: # 支持手动点击 Run workflow 随时运行
 
+concurrency:
+  group: skyward-d1x-upstream-sync
+  cancel-in-progress: false
+
 jobs:
   sync_latest_from_upstream:
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == github.actor }}
+    timeout-minutes: 15
+    # 只在这个仓库运行；别人 fork 出去后，手动运行也不会反向改这里。
+    if: ${{ github.repository == 'mcajun87/skyward-d1x' }}
 
     steps:
       - name: Checkout target repo
@@ -19,25 +25,85 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          persist-credentials: true
 
-      - name: Sync upstream
+      - name: Sync upstream without overwriting d1x changes
+        shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 1. 添加原作者 upstream 仓库
-          git remote add upstream https://github.com/kirklin/skyward.git
-
-          # 2. 获取原作者最新的分支信息
-          git fetch upstream main
-
-          # 3. 切换并合并原作者的 main 分支
-          git checkout main
-          git merge upstream/main --no-edit || {
-            echo "发现代码冲突，无法自动合并，请手动检查。"
+          # The workflow must never start from a dirty tree. If this fails,
+          # something was committed into the checkout by an earlier step.
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::the checkout is dirty; refusing to merge upstream"
             exit 1
-          }
+          fi
 
-          # 4. 推送到你自己的 Fork 仓库
-          git push origin main
+          # 1. Add the original author's repository. set-url is used so a
+          #    cached remote from an earlier run cannot point elsewhere.
+          git remote add upstream https://github.com/kirklin/skyward.git 2>/dev/null || true
+          git remote set-url upstream https://github.com/kirklin/skyward.git
+
+          # 2. Fetch the original author's latest main. Full history is
+          #    needed for a three-way merge; a shallow fetch would lose the
+          #    common ancestor and turn every sync into a conflict.
+          git fetch --no-tags upstream main
+
+          before=$(git rev-parse HEAD)
+          upstream=$(git rev-parse upstream/main)
+          echo "local main before sync: $before"
+          echo "upstream main:        $upstream"
+
+          if git merge-base --is-ancestor "$upstream" HEAD; then
+            echo "upstream/main is already contained in main; nothing to do"
+            exit 0
+          fi
+
+          # 3. If the repository ever loses its shared history with upstream
+          #    (for example after a snapshot import), connect the histories
+          #    once without touching the current tree. This does not copy
+          #    upstream files over the d1x tree.
+          if ! git merge-base HEAD "$upstream" >/dev/null 2>&1; then
+            echo "no common ancestor; connecting upstream history without changing the tree"
+            git merge --allow-unrelated-histories -s ours "$upstream" \
+              -m "Connect upstream history, keep the d1x tree"
+            git push origin HEAD:main
+            exit 0
+          fi
+
+          # 4. A normal three-way merge. Git keeps every local modification
+          #    that upstream did not touch. If both sides changed the same
+          #    lines, the merge stops with a conflict and NOTHING is pushed:
+          #    no side is silently chosen.
+          if ! git merge --no-ff --no-edit "$upstream" \
+            -m "Merge upstream/main into main (keep d1x changes)"; then
+            conflicts=$(git diff --name-only --diff-filter=U || true)
+            git merge --abort || true
+            {
+              echo "## Skyward upstream sync needs a manual merge"
+              echo ""
+              echo "Upstream changed files that conflict with the d1x tree. **Nothing was pushed.**"
+              echo ""
+              echo "Resolve locally with:"
+              echo '```'
+              echo "git fetch upstream main"
+              echo "git merge upstream/main"
+              echo "# fix conflicts, then:"
+              echo "git push origin main"
+              echo '```'
+              echo ""
+              echo "Conflicted files:"
+              echo "$conflicts"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::upstream merge conflicted; local main was not changed or pushed"
+            exit 1
+          fi
+
+          # 5. Never force-push. A non-fast-forward here means the remote
+          #    moved while this job ran; fail and let a human look.
+          git push origin HEAD:main
+
+          echo "merged $upstream into main"
+          git --no-pager log -1 --stat
