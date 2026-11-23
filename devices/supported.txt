@@ -1,0 +1,14 @@
+# Devices this fork keeps
+
+Only the phones below are supported by `mcajun87/skyward-d1x`. Every other
+`devices/*.toml` is removed by `scripts/prune-devices.sh` after an upstream
+sync, so a new phone adapted upstream does not silently join this fork's
+build matrix.
+
+- `d1x` — Samsung Galaxy Note10 5G (SM-N971N, Exynos 9825, A-only)
+- `chiron` — Xiaomi Mi MIX 2 尊享版 (not in 0.5.1 yet; needs its stock recovery)
+- `raphael` — Xiaomi Redmi K20 Pro 尊享版 (not in 0.5.1 yet; needs its stock recovery)
+
+A phone without a `devices/<codename>.toml` is not built. When its stock
+recovery is supplied and its partition table has been checked on the phone,
+add the config here and to `devices/supported.txt`.

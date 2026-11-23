@@ -799,7 +799,7 @@ mod tests {
 
     #[test]
     fn nezha_gives_its_logd_the_libraries_its_recovery_leaves_out() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/nezha.toml")).unwrap();
         let logd = cfg
             .logd
             .expect("the 17 Ultra's recovery leaves out what its logd loads");
@@ -810,7 +810,7 @@ mod tests {
                 "/mnt/system/system/lib64/libcap.so"
             ]
         );
-        let ishtar = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        let ishtar = DeviceConfig::parse(include_str!("../tests/fixtures/ishtar.toml")).unwrap();
         assert_eq!(ishtar.logd, None, "the 13 Ultra's recovery carries both");
     }
 
@@ -838,7 +838,7 @@ mod tests {
 
     #[test]
     fn ishtar_clicks_with_a_waveform_its_driver_keeps() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/ishtar.toml")).unwrap();
         let haptics = cfg.haptics.expect("the 13 Ultra has a motor");
         assert_eq!(
             (haptics.click, haptics.resonance.as_str()),
@@ -859,7 +859,7 @@ mod tests {
 
     #[test]
     fn socrates_clicks_with_samples_made_as_strong_as_the_slider_says() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/socrates.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/socrates.toml")).unwrap();
         let haptics = cfg.haptics.expect("the K60 Pro has a motor");
         assert_eq!(
             (haptics.click, haptics.resonance.as_str()),
@@ -976,7 +976,7 @@ mod tests {
 
     #[test]
     fn parses_nezha() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/nezha.toml")).unwrap();
         assert_eq!(cfg.device.codename, "nezha");
         assert_eq!(cfg.device.os_version_prop, "ro.mi.os.version.incremental");
         let soc = cfg.device.soc.expect("nezha names its SoC");
@@ -1141,8 +1141,8 @@ mod tests {
 
     #[test]
     fn each_phones_programs_run_as_their_init_scripts_run_them() {
-        let nezha = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
-        let ishtar = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        let nezha = DeviceConfig::parse(include_str!("../tests/fixtures/nezha.toml")).unwrap();
+        let ishtar = DeviceConfig::parse(include_str!("../tests/fixtures/ishtar.toml")).unwrap();
         for s in nezha.services.iter().chain(&ishtar.services) {
             assert!(
                 s.user.is_some(),
@@ -1173,107 +1173,30 @@ mod tests {
     }
 
     #[test]
-    fn each_phone_names_the_stock_build_its_recovery_is_made_on() {
-        for (text, version) in [
-            (
-                include_str!("../../../devices/nezha.toml"),
-                "OS4.0.4.0.XPACNXM",
-            ),
-            (
-                include_str!("../../../devices/ishtar.toml"),
-                "OS3.0.308.0.WMACNXM",
-            ),
-            (
-                include_str!("../../../devices/pudding.toml"),
-                "OS4.0.4.0.XPCCNXM",
-            ),
-            (
-                include_str!("../../../devices/pandora.toml"),
-                "OS4.0.4.0.XBLCNXM",
-            ),
-            (
-                include_str!("../../../devices/popsicle.toml"),
-                "OS4.0.4.0.XPBCNXM",
-            ),
-            (
-                include_str!("../../../devices/myron.toml"),
-                "OS4.0.4.0.XPMCNXM",
-            ),
-            (
-                include_str!("../../../devices/songyuan.toml"),
-                "OS4.0.4.0.XGNCNXM",
-            ),
-            (
-                include_str!("../../../devices/athens.toml"),
-                "OS4.0.4.0.XPICNXM",
-            ),
-            (
-                include_str!("../../../devices/fuxi.toml"),
-                "OS3.0.309.0.WMCCNXM",
-            ),
-            (
-                include_str!("../../../devices/nuwa.toml"),
-                "OS3.0.312.0.WMBCNXM",
-            ),
-            (
-                include_str!("../../../devices/socrates.toml"),
-                "OS3.0.304.0.WMKCNXM",
-            ),
-            (
-                include_str!("../../../devices/houji.toml"),
-                "OS3.0.307.0.WNCCNXM",
-            ),
-            (
-                include_str!("../../../devices/shennong.toml"),
-                "OS3.0.309.0.WNBCNXM",
-            ),
-            (
-                include_str!("../../../devices/aurora.toml"),
-                "OS3.0.308.0.WNACNXM",
-            ),
-            (
-                include_str!("../../../devices/dada.toml"),
-                "OS3.0.307.0.WOCCNXM",
-            ),
-            (
-                include_str!("../../../devices/haotian.toml"),
-                "OS3.0.309.0.WOBCNXM",
-            ),
-            (
-                include_str!("../../../devices/xuanyuan.toml"),
-                "OS3.0.314.0.WOACNXM",
-            ),
-            (
-                include_str!("../../../devices/byron.toml"),
-                "OS3.0.310.0.WAFCNXM",
-            ),
-            (
-                include_str!("../../../devices/zorn.toml"),
-                "OS3.0.309.0.WOKCNXM",
-            ),
-            (
-                include_str!("../../../devices/miro.toml"),
-                "OS3.0.305.0.WOMCNXM",
-            ),
-            (
-                include_str!("../../../devices/annibale.toml"),
-                "OS3.0.307.0.WPKCNXM",
-            ),
-            (
-                include_str!("../../../devices/warsaw.toml"),
-                "OS3.0.309.0.WHPCNXM",
-            ),
-        ] {
-            let stock = DeviceConfig::parse(text)
-                .unwrap()
-                .stock
-                .expect("a stock build to build on");
-            assert_eq!(stock.version, version);
+    fn devices_that_name_a_stock_build_name_it_fully() {
+        let devices = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../devices");
+        for entry in std::fs::read_dir(&devices).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            let Some(stock) = DeviceConfig::parse(&text).unwrap().stock else {
+                continue;
+            };
             assert!(
-                stock.package.ends_with(".zip") && stock.package.contains(&format!("/{version}/")),
+                stock.package.starts_with("https://") && stock.package.ends_with(".zip"),
                 "{}",
                 stock.package
             );
+            assert!(
+                stock
+                    .package
+                    .contains(&format!("/{}/", stock.version)),
+                "{}",
+                stock.package
+            );
+            assert_eq!(stock.recovery.len(), 64, "{}", stock.recovery);
         }
     }
 
@@ -1338,7 +1261,7 @@ mod tests {
 
     #[test]
     fn parses_ishtar() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/ishtar.toml")).unwrap();
         assert_eq!(cfg.device.codename, "ishtar");
         assert_eq!(
             (cfg.display.width, cfg.display.height, cfg.display.density),
@@ -1397,7 +1320,7 @@ mod tests {
     #[test]
     fn the_phone_is_read_from_a_configuration_this_build_cannot_read_whole() {
         assert_eq!(
-            codename(include_str!("../../../devices/ishtar.toml")).unwrap(),
+            codename(include_str!("../tests/fixtures/ishtar.toml")).unwrap(),
             "ishtar"
         );
         let later = "[device]\ncodename = \"x\"\nab = \"no longer a switch\"\n[display]\nwidth = \"wide\"\n[aurora]\nnew = 1\n";
@@ -1437,7 +1360,7 @@ mod tests {
 
     #[test]
     fn the_phones_own_logs_are_folders_inside_the_data_partition() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/ishtar.toml")).unwrap();
         assert!(cfg.wipe.logs.contains(&"/data/vendor/diag".to_string()));
         assert!(
             DeviceConfig::parse("[device]\ncodename = \"x\"\n")
@@ -1461,7 +1384,7 @@ mod tests {
 
     #[test]
     fn ishtar_brings_its_wlan_up_from_its_own_partitions() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/ishtar.toml")).unwrap();
         let wlan = cfg.wlan.expect("the 13 Ultra's WLAN is described");
         assert_eq!(wlan.modules, ["qca_cld3_kiwi_v2"]);
         assert_eq!(
@@ -1488,7 +1411,7 @@ mod tests {
 
     #[test]
     fn nezha_brings_its_wlan_up_from_its_own_partitions() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/nezha.toml")).unwrap();
         assert!(
             cfg.modules.sources.iter().any(|s| s == "system_dlkm"),
             "the kernel's own modules are a source"
@@ -1573,8 +1496,8 @@ mod tests {
 
     #[test]
     fn socrates_brings_its_wlan_up_without_a_mac_address_in_persist() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/socrates.toml")).unwrap();
-        let ishtar = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml"))
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/socrates.toml")).unwrap();
+        let ishtar = DeviceConfig::parse(include_str!("../tests/fixtures/ishtar.toml"))
             .unwrap()
             .wlan
             .unwrap();
@@ -1613,7 +1536,7 @@ mod tests {
 
     #[test]
     fn services_use_the_partitions_they_run_from() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        let cfg = DeviceConfig::parse(include_str!("../tests/fixtures/ishtar.toml")).unwrap();
         let [report, sensor] = &cfg.services[..] else {
             panic!("ishtar keeps its two touch programs running")
         };
@@ -1628,7 +1551,7 @@ mod tests {
             "its /system/lib64 is the recovery's own"
         );
         assert!(!report.uses(Path::new("/vendor")));
-        let nezha = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
+        let nezha = DeviceConfig::parse(include_str!("../tests/fixtures/nezha.toml")).unwrap();
         assert!(
             nezha.services[0].uses(Path::new("/vendor")),
             "its shell and its libraries are the vendor partition's"
