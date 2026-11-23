@@ -107,17 +107,7 @@ jobs:
             # a stock recovery is the base the image is made on. A phone
             # carried as a bare image (d1x) is built on its own baseline
             # instead, so it must not enter this matrix.
-            python3 - <<'PY' >> "$GITHUB_OUTPUT"
-            import glob, json, tomllib
-            names = []
-            for path in sorted(glob.glob("devices/*.toml")):
-                with open(path, "rb") as f:
-                    data = tomllib.load(f)
-                if data.get("stock"):
-                    names.append(path.rsplit("/", 1)[1][:-5])
-            print("devices=" + json.dumps(names))
-            print("count=" + str(len(names)))
-            PY
+            python3 -c 'import glob, json, tomllib; names = [p.rsplit("/", 1)[1][:-5] for p in sorted(glob.glob("devices/*.toml")) if tomllib.load(open(p, "rb")).get("stock")]; print("devices=" + json.dumps(names)); print("count=" + str(len(names)))' >> "$GITHUB_OUTPUT"
           fi
 
   recovery:
