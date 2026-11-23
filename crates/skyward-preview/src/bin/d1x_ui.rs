@@ -100,6 +100,11 @@ fn main() -> Result<()> {
     let mut app = base(Screen::Specs);
     screen_png(&mut app, &fonts, &info, &out.join("10-specs.png"))?;
 
+    // The search page, the last OrangeFox page worth seeing before a flash.
+    let mut app = base(Screen::Search);
+    app.state.search = "bf".into();
+    screen_png(&mut app, &fonts, &info, &out.join("11-search.png"))?;
+
     println!("wrote {}", out.display());
     Ok(())
 }

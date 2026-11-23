@@ -1182,9 +1182,14 @@ mod tests {
         let px = |c: &Canvas, x: f32, y: f32| {
             c.data[(y as usize * W as usize + x as usize) * 4..][..3].to_vec()
         };
+        let pill = if t.dark {
+            vec![38, 38, 38]
+        } else {
+            vec![243, 244, 247]
+        };
         assert_eq!(
             px(&c, x - t.m.dp(20.0), y),
-            vec![243, 244, 247],
+            pill,
             "the root's capsule shows over the list"
         );
         assert_eq!(

@@ -816,17 +816,17 @@ impl App {
         let (q, _) = morph.at(now);
         let (field, _) = widgets::search_layout(&t);
         let home = Rect::new(
-            m.margin,
-            m.content_top - morph.scroll,
-            m.w as f32 - m.margin * 2.0,
-            m.search_h,
+            morph.home.x,
+            morph.home.y - morph.scroll,
+            morph.home.w,
+            morph.home.h,
         );
         let along = |a: f32, b: f32| a + (b - a) * q;
         let bar = Rect::new(
-            m.margin,
+            along(home.x, field.x),
             along(home.y, field.y),
             along(home.w, field.w),
-            m.search_h,
+            along(home.h, field.h),
         );
         let rise = bar.y - home.y;
         if !morph.into {
@@ -862,7 +862,7 @@ impl App {
             );
         } else {
             // The home page under its bar comes down with it.
-            let below = m.content_top + m.search_h;
+            let below = home.y + home.h;
             out.put_rows(
                 &frame.canvas,
                 below.floor() as i32,
@@ -1374,19 +1374,20 @@ mod tests {
     fn the_search_bar_moves_up_into_the_search_page_and_back_down() {
         let (f, i) = (fonts(), info());
         let t = Theme::light(W, H, PPD);
+        let fox = Theme::fox(W, H, PPD);
         let m = t.m;
         let mut app = App::new(Screen::Home, W, H, PPD);
         let mut screen = Canvas::new(W, H);
         // The bar's top along a column through it, clear of the title and
         // the placeholder: the first row in the field's grey.
         let x = m.dp(300.0) as u32;
-        let top = |screen: &Canvas| {
+        let top = |screen: &Canvas, grey: u8| {
             (m.dp(40.0) as u32..H)
-                .find(|&y| screen.data[((y * W + x) * 4) as usize] == t.pal.search.r)
+                .find(|&y| screen.data[((y * W + x) * 4) as usize] == grey)
                 .map(|y| y as f32)
         };
         let grey = |screen: &Canvas, y: f32| screen.data[((y as u32 * W + W / 2) * 4) as usize];
-        let (home, field) = (m.content_top, widgets::search_layout(&t).0.y);
+        let (home, field) = (m.content_top, widgets::search_layout(&fox).0.y);
         // The device card under the home page's bar.
         let card = m.content_top + m.search_h + m.after_search + m.dp(20.0);
         app.compose(&mut screen, &f, &i, "12:00", 0);
@@ -1398,14 +1399,14 @@ mod tests {
         app.compose(&mut screen, &f, &i, "12:00", 1067);
         let along = crate::motion::settle(67, MORPH_PERIOD);
         let expected = home + (field - home) * along;
-        let at = top(&screen).expect("the bar is on screen");
+        let at = top(&screen, fox.pal.search.r).expect("the bar is on screen");
         assert!(
             (at - expected).abs() <= 2.0,
             "up {along} of the way after 67 ms: at {at}, not {expected}"
         );
         assert_eq!(
             grey(&screen, card),
-            t.pal.bg.r,
+            fox.pal.bg.r,
             "the home page's cards go at once"
         );
         app.compose(&mut screen, &f, &i, "12:00", 2500);
@@ -1413,13 +1414,13 @@ mod tests {
             app.morph.is_none(),
             "settled, the search page shows as itself"
         );
-        assert_eq!(top(&screen), Some(field.ceil()));
+        assert_eq!(top(&screen, fox.pal.search.r), Some(field.ceil()));
 
         tap_at(&mut app, &f, &i, Action::CloseSearch, 3000);
         assert_eq!(app.screen(), Screen::Home);
         app.compose(&mut screen, &f, &i, "12:00", 3067);
         let expected = field + (home - field) * along;
-        let at = top(&screen).expect("the bar is on screen");
+        let at = top(&screen, t.pal.search.r).expect("the bar is on screen");
         assert!(
             (at - expected).abs() <= 2.0,
             "down {along} of the way after 67 ms: at {at}, not {expected}"
@@ -1431,6 +1432,6 @@ mod tests {
         );
         app.compose(&mut screen, &f, &i, "12:00", 4500);
         assert!(app.morph.is_none());
-        assert_eq!(top(&screen), Some(home.ceil()));
+        assert_eq!(top(&screen, t.pal.search.r), Some(home.ceil()));
     }
 }

@@ -196,8 +196,10 @@ impl Theme {
         m.title_px = px_per_dp * 30.0;
         m.title_top = px_per_dp * 52.0;
         m.content_top = px_per_dp * 108.0;
-        m.search_h = 0.0;
-        m.after_search = 0.0;
+        // The search page still folds its own field out of the home page's,
+        // so its height and the gap under it stay the stock measurements.
+        m.search_h = px_per_dp * 43.7;
+        m.after_search = px_per_dp * 12.7;
         m.row_title_px = px_per_dp * 17.0;
         m.sub_px = px_per_dp * 13.0;
         m.section_label_top = px_per_dp * 20.0;

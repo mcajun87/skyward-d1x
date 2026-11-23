@@ -1095,6 +1095,8 @@ struct Morph {
     start: u64,
     /// How far the home page was scrolled, where its bar stood.
     scroll: f32,
+    /// The home page's bar, in the home page's own theme.
+    home: Rect,
     /// The search page's keyboard, and where it rests.
     keyboard: Option<(Canvas, i32)>,
     /// What the search page shows between its field and the keyboard, and

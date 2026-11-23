@@ -801,7 +801,8 @@ mod tests {
     #[test]
     fn the_back_control_and_the_search_buttons_darken_at_once_under_a_finger() {
         let (f, i) = (fonts(), info());
-        let t = Theme::light(W, H, PPD);
+        let t = Theme::fox(W, H, PPD);
+        let light = Theme::light(W, H, PPD);
         let mut c = Canvas::new(W, H);
 
         // `<`: a disc behind it, the `<` lighter on it.
@@ -811,15 +812,19 @@ mod tests {
         let around = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
         app.compose(&mut c, &f, &i, "12:00", 5000);
         assert_eq!(grey_at(&c, cx + r * 0.6, cy), t.pal.bg.r);
-        assert_eq!(darkest(&c, around), 0);
+        assert_eq!(
+            darkest(&c, around),
+            t.pal.bg.r,
+            "the dark page behind the `<`"
+        );
         app.touch(Touch::Down(bx, by), &f, 6000);
         app.compose(&mut c, &f, &i, "12:00", 6000);
         let disc = over(t.pal.button_press, t.pal.bg).r;
         assert_eq!(grey_at(&c, cx + r * 0.6, cy), disc, "darker at once");
-        let arrow = darkest(&c, around);
+        let arrow = lightest(&c, around);
         assert!(
-            arrow.abs_diff(85) <= 2,
-            "the stock `<` held down is 85, not {arrow}"
+            arrow > 100,
+            "the OrangeFox `<` stays light on its darkened disc, not {arrow}"
         );
         // A finger moving off lets it go.
         app.touch(Touch::Move(bx, by + t.m.dp(40.0)), &f, 6050);
@@ -839,10 +844,10 @@ mod tests {
             grey_at(&c, x, y + button.h * 0.35),
             over(t.pal.button_press, t.pal.search).r
         );
-        let cross = darkest(&c, button);
+        let cross = lightest(&c, button);
         assert!(
-            cross.abs_diff(70) <= 2,
-            "the stock cross held down is 70, not {cross}"
+            cross > 100,
+            "the OrangeFox cross stays light on its darkened disc, not {cross}"
         );
 
         // The home page's search bar, clear of its words.
@@ -857,7 +862,10 @@ mod tests {
         let (x, y) = (bar.x + bar.w * 0.8, bar.y + bar.h / 2.0);
         app.touch(Touch::Down(x, y), &f, 1000);
         app.compose(&mut c, &f, &i, "12:00", 1000);
-        assert_eq!(grey_at(&c, x, y), over(t.pal.button_press, t.pal.search).r);
+        assert_eq!(
+            grey_at(&c, x, y),
+            over(light.pal.button_press, light.pal.search).r
+        );
     }
 
     #[test]

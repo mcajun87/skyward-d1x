@@ -157,6 +157,20 @@ pub(super) fn darkest(c: &Canvas, r: Rect) -> u8 {
         .expect("a part of the screen")
 }
 
+/// The lightest grey of the screen within `r`.
+pub(super) fn lightest(c: &Canvas, r: Rect) -> u8 {
+    let (x0, y0, x1, y1) = (
+        r.x as u32,
+        r.y as u32,
+        (r.x + r.w) as u32,
+        (r.y + r.h) as u32,
+    );
+    (y0..y1)
+        .flat_map(|y| (x0..x1).map(move |x| c.data[((y * c.w + x) * 4) as usize]))
+        .max()
+        .expect("a part of the screen")
+}
+
 /// A copy of the screen.
 pub(super) fn shot(c: &Canvas) -> Canvas {
     c.clone()

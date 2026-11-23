@@ -85,11 +85,24 @@ impl App {
                 .as_ref()
                 .map(|fr| keyboard_strip(&self.theme(), fr))
         };
+        let scroll = self.stack[home].1;
+        let ht = if self.state.dark {
+            Theme::dark(self.w, self.h, self.px_per_dp)
+        } else {
+            Theme::light(self.w, self.h, self.px_per_dp)
+        };
+        let home_bar = Rect::new(
+            ht.m.margin,
+            ht.m.content_top,
+            ht.m.w as f32 - ht.m.margin * 2.0,
+            ht.m.search_h,
+        );
         self.morph = Some(Morph {
             into,
             spring: Spring::new(now, (q - target) * 1000.0, speed * 1000.0, MORPH_PERIOD),
             start: now,
-            scroll: self.stack[home].1,
+            scroll,
+            home: home_bar,
             keyboard,
             body: None,
             title,
