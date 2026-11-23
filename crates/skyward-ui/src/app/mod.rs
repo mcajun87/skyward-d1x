@@ -1440,6 +1440,16 @@ impl App {
     }
 
     pub fn theme(&self) -> Theme {
+        // Only the three pages the user named -- home, settings, about --
+        // keep the stock Settings look. Every other page, including the
+        // pages opened from those three, takes OrangeFox's dark full-width
+        // lists and orange accent.
+        if !matches!(
+            self.screen(),
+            Screen::Home | Screen::Settings | Screen::About
+        ) {
+            return Theme::fox(self.w, self.h, self.px_per_dp);
+        }
         if self.state.dark {
             Theme::dark(self.w, self.h, self.px_per_dp)
         } else {

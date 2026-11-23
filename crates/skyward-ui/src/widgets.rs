@@ -1025,19 +1025,22 @@ pub fn big_title(t: &Theme, f: &Fonts, title: &str) -> Sprite {
     let m = &t.m;
     let pad = blur_room(t);
     // A title too long for the screen is set smaller, on the same line.
-    let px = Canvas::new(0, 0).fitting(
-        &f.title,
-        title,
-        m.title_px,
-        m.w as f32 - m.title_x - m.margin,
-    );
+    let room = match t.fox {
+        true => m.w as f32 - m.inner * 2.0,
+        false => m.w as f32 - m.title_x - m.margin,
+    };
+    let px = Canvas::new(0, 0).fitting(&f.title, title, m.title_px, room);
     let w = Canvas::new(0, 0).text_width(&f.title, title, px);
     let top = if px == m.title_px {
         m.title_top
     } else {
         m.title_top - f.title.ink(m.title_px).0 + f.title.ink(px).0
     };
-    let (x, y) = (m.title_x - pad, m.title_top - pad);
+    let title_x = match t.fox {
+        true => (m.w as f32 - w) / 2.0,
+        false => m.title_x,
+    };
+    let (x, y) = (title_x - pad, m.title_top - pad);
     let size = (
         (w + pad * 2.0).ceil() as u32,
         (m.title_px * 1.4 + pad * 2.0).ceil() as u32,
@@ -1046,7 +1049,7 @@ pub fn big_title(t: &Theme, f: &Fonts, title: &str) -> Sprite {
         c.text_top(
             &f.title,
             title,
-            m.title_x + dx,
+            title_x + dx,
             top + dy,
             px,
             Rgba::rgb(0, 0, 0),
@@ -2119,8 +2122,8 @@ fn tag_room(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> f32 {
 
 fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f32, tone: &Tone) {
     let m = &t.m;
-    let card_x = m.margin;
-    let right = m.w as f32 - m.margin;
+    let card_x = if t.fox { 0.0 } else { m.margin };
+    let right = m.w as f32 - if t.fox { 0.0 } else { m.margin };
     let cy = top + lay.h / 2.0;
     if let Some((color, icon)) = r.icon {
         icons::tile(c, t, card_x + m.inner, cy - m.icon / 2.0, color, icon);
@@ -2429,14 +2432,32 @@ pub fn list_toned(
     let m = &t.m;
     let lays: Vec<Layout> = rows.iter().map(|r| layout(c, t, f, r)).collect();
     let h: f32 = lays.iter().map(|l| l.h).sum();
-    let w = m.w as f32 - m.margin * 2.0;
-    c.fill_round_rect(m.margin, top, w, h, m.card_radius, tone.card);
+    // OrangeFox's pages are one full-width list, its rows parted by a
+    // hairline; the stock pages keep their rounded cards.
+    let (x, w) = match t.fox {
+        true => (0.0, m.w as f32),
+        false => (m.margin, m.w as f32 - m.margin * 2.0),
+    };
+    if t.fox {
+        c.fill_rect(x, top, w, h, tone.card);
+    } else {
+        c.fill_round_rect(x, top, w, h, m.card_radius, tone.card);
+    }
     let mut y = top;
     let mut rects = Vec::new();
     for (r, l) in rows.iter().zip(&lays) {
         draw_row(c, t, f, r, l, y, tone);
-        rects.push(Rect::new(m.margin, y, w, l.h));
+        rects.push(Rect::new(x, y, w, l.h));
         y += l.h;
+        if t.fox {
+            c.fill_rect(
+                x,
+                y - 1.0,
+                w,
+                1.0,
+                Rgba::rgb(255, 255, 255).with_alpha(18),
+            );
+        }
     }
     Block {
         bottom: top + h,

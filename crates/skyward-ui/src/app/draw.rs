@@ -714,6 +714,12 @@ impl App {
             out.put(&d.canvas, (out.h - d.canvas.h) as i32);
             shine(out, Group::Dock);
         }
+        // OrangeFox marks its bar with a thin orange rule; the stock pages
+        // keep the plain bar.
+        if t.fox {
+            let y = widgets::bar_bottom(t) - t.m.dp(1.0);
+            out.fill_rect(0.0, y, self.w as f32, t.m.dp(2.0), t.pal.accent);
+        }
         if frame.back {
             let (_, chip, x, y) = self.chip.as_ref().expect("a page's `<` is drawn with it");
             out.lay(chip, *x, *y, bar);

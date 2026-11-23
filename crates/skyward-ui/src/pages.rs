@@ -752,7 +752,11 @@ pub fn mount(cx: &Ctx) -> Frame {
                     .map(|((&i, label), sub)| {
                         let m = &mounts[i];
                         let trail = if m.holders.is_empty() {
-                            Trail::Switch(m.mounted)
+                            if t.fox {
+                                Trail::Check(m.mounted)
+                            } else {
+                                Trail::Switch(m.mounted)
+                            }
                         } else {
                             Trail::Text(l.pick(texts::mount::IN_USE))
                         };

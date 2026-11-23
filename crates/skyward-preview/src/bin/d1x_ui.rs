@@ -90,6 +90,16 @@ fn main() -> Result<()> {
     let mut app = base(Screen::Install);
     screen_png(&mut app, &fonts, &info, &out.join("07-adb.png"))?;
 
+    // The three pages that stay Skyward rather than OrangeFox.
+    let mut app = base(Screen::Settings);
+    screen_png(&mut app, &fonts, &info, &out.join("08-settings.png"))?;
+
+    let mut app = base(Screen::About);
+    screen_png(&mut app, &fonts, &info, &out.join("09-about.png"))?;
+
+    let mut app = base(Screen::Specs);
+    screen_png(&mut app, &fonts, &info, &out.join("10-specs.png"))?;
+
     println!("wrote {}", out.display());
     Ok(())
 }
@@ -103,6 +113,7 @@ fn base(screen: Screen) -> App {
 }
 
 fn screen_png(app: &mut App, f: &Fonts, info: &DeviceInfo, path: &Path) -> Result<()> {
+    app.tick(LISTED as u64);
     let mut c = Canvas::new(W, H);
     app.compose(&mut c, f, info, CLOCK, 0);
     write_png(path, &c)

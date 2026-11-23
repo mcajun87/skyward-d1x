@@ -153,6 +153,9 @@ pub struct Theme {
     pub hero: Hero,
     pub m: Metrics,
     pub dark: bool,
+    /// OrangeFox's own chrome: a dark page of full-width list rows, with
+    /// orange section labels and rules, rather than the stock settings cards.
+    pub fox: bool,
 }
 
 impl Theme {
@@ -163,6 +166,7 @@ impl Theme {
             hero: LIGHT_HERO,
             m: metrics(w, h, px_per_dp),
             dark: false,
+            fox: false,
         }
     }
 
@@ -172,6 +176,39 @@ impl Theme {
             hero: DARK_HERO,
             m: metrics(w, h, px_per_dp),
             dark: true,
+            fox: false,
+        }
+    }
+
+    /// OrangeFox's chrome, for every page but the home, settings and about
+    /// ones: a near-black page, full-width list rows divided by hairlines,
+    /// and orange as the one accent.
+    pub fn fox(w: u32, h: u32, px_per_dp: f32) -> Self {
+        let mut m = metrics(w, h, px_per_dp);
+        m.margin = 0.0;
+        m.card_radius = 0.0;
+        m.card_gap = 1.0;
+        m.row_h = px_per_dp * 58.0;
+        m.row_pad_v = px_per_dp * 18.0;
+        m.inner = px_per_dp * 20.0;
+        m.icon = px_per_dp * 26.0;
+        m.icon_gap = px_per_dp * 16.0;
+        m.title_px = px_per_dp * 30.0;
+        m.title_top = px_per_dp * 52.0;
+        m.content_top = px_per_dp * 108.0;
+        m.search_h = 0.0;
+        m.after_search = 0.0;
+        m.row_title_px = px_per_dp * 17.0;
+        m.sub_px = px_per_dp * 13.0;
+        m.section_label_top = px_per_dp * 20.0;
+        m.section_block = px_per_dp * 44.0;
+        m.label_px = px_per_dp * 14.0;
+        Theme {
+            pal: FOX,
+            hero: DARK_HERO,
+            m,
+            dark: true,
+            fox: true,
         }
     }
 
@@ -341,6 +378,48 @@ const DARK: Palette = Palette {
     updown: Rgba::rgb(54, 54, 54),
     popup: Rgba::rgb(41, 41, 41),
     shadow: Rgba::rgb(0, 0, 0).with_alpha(77),
+};
+
+// OrangeFox's own colours: a near-black page, rows a step lighter, orange
+// for every accent, and white text.
+const FOX: Palette = Palette {
+    bg: Rgba::rgb(18, 18, 18),
+    card: Rgba::rgb(30, 30, 30),
+    text: Rgba::rgb(238, 238, 238),
+    subtitle: Rgba::rgb(154, 154, 154),
+    value: Rgba::rgb(190, 190, 190),
+    section: Rgba::rgb(255, 122, 0),
+    chevron: Rgba::rgb(255, 122, 0),
+    accent: Rgba::rgb(255, 122, 0),
+    track: Rgba::rgb(44, 44, 44),
+    switch_off: Rgba::rgb(68, 68, 68),
+    search: Rgba::rgb(38, 38, 38),
+    search_icon: Rgba::rgb(130, 130, 130),
+    placeholder: Rgba::rgb(255, 255, 255).with_alpha(100),
+    badge: Rgba::rgb(58, 38, 18),
+    avatar: Rgba::rgb(52, 52, 52),
+    avatar_glyph: Rgba::rgb(230, 230, 230),
+    status: Rgba::rgb(238, 238, 238),
+    battery: BatteryInk {
+        charging: Rgba::rgb(29, 205, 58),
+        low: Rgba::rgb(255, 92, 84),
+        level: Rgba::rgb(255, 255, 255).with_alpha(232),
+        empty: Rgba::rgb(255, 255, 255).with_alpha(94),
+        bolt: Rgba::rgb(255, 255, 255).with_alpha(207),
+    },
+    mono_icon: Rgba::rgb(150, 150, 150),
+    danger: Rgba::rgb(255, 92, 84),
+    danger_soft: Rgba::rgb(58, 26, 22),
+    info: Rgba::rgb(224, 224, 224),
+    outline: Rgba::rgb(160, 160, 160),
+    spec_label: Rgba::rgb(150, 150, 150),
+    row_press: Rgba::rgb(255, 255, 255).with_alpha(26),
+    button_press: Rgba::rgb(255, 255, 255).with_alpha(22),
+    round: Rgba::rgb(50, 50, 50),
+    round_mark: Rgba::rgb(238, 238, 238),
+    updown: Rgba::rgb(90, 90, 90),
+    popup: Rgba::rgb(38, 38, 38),
+    shadow: Rgba::rgb(0, 0, 0).with_alpha(110),
 };
 
 // Sampled from the stock「我的设备」page: in light mode the cards are
