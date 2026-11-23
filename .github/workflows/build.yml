@@ -91,6 +91,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       devices: ${{ steps.list.outputs.devices }}
+      count: ${{ steps.list.outputs.count }}
     steps:
       - uses: actions/checkout@v7
       - id: list
@@ -100,13 +101,29 @@ jobs:
           if [ -n "$DEVICE" ]; then
             test -f "devices/$DEVICE.toml"
             echo "devices=$(jq -nc --arg device "$DEVICE" '[$device]')" >> "$GITHUB_OUTPUT"
+            echo "count=1" >> "$GITHUB_OUTPUT"
           else
-            echo "devices=$(basename -s .toml devices/*.toml | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+            # Only phones with a stock update package can be built here:
+            # a stock recovery is the base the image is made on. A phone
+            # carried as a bare image (d1x) is built on its own baseline
+            # instead, so it must not enter this matrix.
+            python3 - <<'PY' >> "$GITHUB_OUTPUT"
+            import glob, json, tomllib
+            names = []
+            for path in sorted(glob.glob("devices/*.toml")):
+                with open(path, "rb") as f:
+                    data = tomllib.load(f)
+                if data.get("stock"):
+                    names.append(path.rsplit("/", 1)[1][:-5])
+            print("devices=" + json.dumps(names))
+            print("count=" + str(len(names)))
+            PY
           fi
 
   recovery:
     name: Recovery for ${{ matrix.device }}
     needs: [tools, devices]
+    if: needs.devices.outputs.count != '0'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -168,8 +185,8 @@ jobs:
 
   release:
     name: Publish the release
-    if: github.ref_type == 'tag'
-    needs: [tag, check, recovery]
+    if: github.ref_type == 'tag' && needs.devices.outputs.count != '0'
+    needs: [tag, check, devices, recovery]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

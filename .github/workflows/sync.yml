@@ -69,7 +69,6 @@ jobs:
             echo "no common ancestor; connecting upstream history without changing the tree"
             git merge --allow-unrelated-histories -s ours "$upstream" \
               -m "Connect upstream history, keep the d1x tree"
-            git push origin HEAD:main
             exit 0
           fi
 
@@ -101,9 +100,27 @@ jobs:
             exit 1
           fi
 
+          echo "merged $upstream into main"
+          git --no-pager log -1 --stat
+
+      - name: Keep only supported devices
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Upstream adapts a new Xiaomi phone regularly. This fork carries
+          # d1x, chiron and raphael only; remove every other devices/*.toml
+          # that the merge just brought back, so the build matrix cannot
+          # grow silently.
+          bash scripts/prune-devices.sh
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "devices: keep only d1x, chiron and raphael"
+          fi
+
           # 5. Never force-push. A non-fast-forward here means the remote
           #    moved while this job ran; fail and let a human look.
           git push origin HEAD:main
-
-          echo "merged $upstream into main"
           git --no-pager log -1 --stat
