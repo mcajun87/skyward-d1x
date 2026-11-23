@@ -42,9 +42,16 @@ impl App {
             // The switch moves at once; the runtime then tells how the WLAN
             // came up, or went off.
             Action::Toggle(Switch::Wlan) => {
-                let w = self.state.wlan.as_mut().expect("the WLAN switch shows on a phone whose WLAN is brought up");
+                let w = self
+                    .state
+                    .wlan
+                    .as_mut()
+                    .expect("the WLAN switch shows on a phone whose WLAN is brought up");
                 let on = matches!(w.power, Power::Off | Power::Failed(_));
-                *w = Wlan { power: if on { Power::Starting } else { Power::Off }, ..Wlan::default() };
+                *w = Wlan {
+                    power: if on { Power::Starting } else { Power::Off },
+                    ..Wlan::default()
+                };
                 self.refresh();
                 return vec![Effect::Wlan(on)];
             }
@@ -63,12 +70,16 @@ impl App {
                 let on = match switch {
                     Switch::Vibrate => &mut self.state.vibrate,
                     Switch::FileTransfer => &mut self.state.file_transfer,
+                    Switch::WifiAdb => &mut self.state.wifi_adb,
                     Switch::Compress => &mut self.state.compress,
                     Switch::Verify => &mut self.state.verify,
+                    Switch::Encrypt => &mut self.state.encrypt,
                     Switch::Signature => &mut self.state.check_signature,
                     Switch::KeepRecovery => &mut self.state.keep_recovery,
                     Switch::ShowPassword => &mut self.state.show_password,
-                    Switch::Wlan | Switch::SystemTimeZone => unreachable!("the switch is turned above"),
+                    Switch::Wlan | Switch::SystemTimeZone => {
+                        unreachable!("the switch is turned above")
+                    }
                 };
                 *on = !*on;
                 let now_on = *on;
@@ -76,14 +87,44 @@ impl App {
                 if switch == Switch::FileTransfer {
                     return vec![Effect::FileTransfer(now_on)];
                 }
+                if switch == Switch::WifiAdb {
+                    return vec![Effect::WifiAdb(now_on)];
+                }
             }
+            Action::OpenMount(i) => {
+                self.state.mount_chosen = i;
+                self.open(Screen::MountDetail);
+                return self.arrive_at(Screen::MountDetail);
+            }
+            Action::OpenMountFormat(i) => {
+                if !self.open_mount_format(i) {
+                    self.say(l.pick(texts::filesystems::CANT_CHANGE), now);
+                }
+            }
+            Action::MountAll => return vec![Effect::MountAll],
+            Action::UnmountAll => return vec![Effect::UnmountAll],
             Action::MountToggle(i) => {
                 if self.state.mount_failure.take().is_some() {
                     self.refresh();
                 }
-                let row = &self.state.mounts.as_ref().expect("a partition toggled is one the page lists")[i];
+                let row = &self
+                    .state
+                    .mounts
+                    .as_ref()
+                    .expect("a partition toggled is one the page lists")[i];
                 let base = row.base.clone();
-                return vec![if row.mounted { Effect::Unmount(base) } else { Effect::Mount(base) }];
+                // The data partition is not mounted raw: a touch when it
+                // is closed opens the decrypt page, and when it is open its
+                // close unmounts it along with /sdcard and its dm device.
+                if base == DATA_PARTITION && !row.mounted {
+                    self.open(Screen::Decrypt);
+                    return self.open_data();
+                }
+                return vec![if row.mounted {
+                    Effect::Unmount(base)
+                } else {
+                    Effect::Mount(base)
+                }];
             }
             Action::RebootTarget(i) => {
                 self.state.reboot = i;
@@ -92,7 +133,10 @@ impl App {
             // Everything takes in every part, so choosing it leaves the
             // parts out, and choosing a part on its own leaves it out.
             Action::WipeItem(item) => {
-                let k = WIPES.iter().position(|&w| w == item).expect("the page offers only what it lists");
+                let k = WIPES
+                    .iter()
+                    .position(|&w| w == item)
+                    .expect("the page offers only what it lists");
                 let on = !self.state.wipe[k];
                 match (on, item) {
                     (true, Wipe::All) => {
@@ -106,6 +150,17 @@ impl App {
                     (false, _) => self.state.wipe[k] = false,
                 }
                 self.refresh();
+            }
+            Action::WipeYesOpen => {
+                self.state.wipe_yes.clear();
+                self.open(Screen::WipeYes);
+            }
+            Action::WipeYes => {
+                if self.state.wipe_yes == "yes" {
+                    self.state.wipe_yes.clear();
+                    return vec![Effect::FactoryReset];
+                }
+                self.say(l.pick(texts::wipe::YES_MISMATCH), now);
             }
             Action::Confirm(_) => self.say(l.pick(texts::toast::SLIDE_RIGHT), now),
             Action::Slider(_) | Action::Pattern => {}
@@ -121,6 +176,32 @@ impl App {
                 }
                 _ => self.say(l.pick(INSTALL_UNFINISHED), now),
             },
+            Action::QueueAdd(place) => {
+                self.state.queue_add = true;
+                self.open(Screen::Choose(place));
+                return self.arrive_at(Screen::Choose(place));
+            }
+            Action::QueueRemove(k) => {
+                if self.state.queue_running {
+                    self.say(l.pick(texts::install::QUEUE_RUNNING), now);
+                } else if k < self.state.queue.len() {
+                    self.state.queue.remove(k);
+                    self.refresh();
+                }
+            }
+            Action::QueueStart => {
+                if let Some((place, path)) = self.queue_begin() {
+                    self.open(Screen::Installing);
+                    return vec![Effect::InstallFile(place, path)];
+                }
+                self.say(l.pick(texts::install::QUEUE_EMPTY), now);
+                return Vec::new();
+            }
+            Action::QueueClear => {
+                self.state.queue.clear();
+                self.state.queue_running = false;
+                self.refresh();
+            }
             Action::FlashPartition(k) => {
                 if let Install::Choosing(choice) = &mut self.state.install {
                     choice.partition = k;
@@ -164,15 +245,29 @@ impl App {
             // folder it is in stays put: the entry stays picked for another
             // folder.
             Action::Paste => {
-                let clip = self.state.clip.clone().expect("only a picked entry is pasted");
-                let (path, folder) = (std::path::Path::new(&clip.path), std::path::Path::new(&self.state.files.path));
-                let name = path.file_name().map_or_else(|| clip.path.clone(), |n| n.to_string_lossy().into_owned());
+                let clip = self
+                    .state
+                    .clip
+                    .clone()
+                    .expect("only a picked entry is pasted");
+                let (path, folder) = (
+                    std::path::Path::new(&clip.path),
+                    std::path::Path::new(&self.state.files.path),
+                );
+                let name = path
+                    .file_name()
+                    .map_or_else(|| clip.path.clone(), |n| n.to_string_lossy().into_owned());
                 if folder.starts_with(path) {
                     self.say(&texts::toast::inside_itself(l, name), now);
                 } else if clip.op == FileOp::Move && path.parent() == Some(folder) {
                     self.say(&texts::toast::already_there(l, name), now);
                 } else {
-                    return vec![Effect::Paste { op: clip.op, path: clip.path, into: self.state.files.path.clone(), clash: None }];
+                    return vec![Effect::Paste {
+                        op: clip.op,
+                        path: clip.path,
+                        into: self.state.files.path.clone(),
+                        clash: None,
+                    }];
                 }
             }
             Action::Unpick => {
@@ -180,23 +275,49 @@ impl App {
                 self.refresh();
             }
             Action::RenameEntry => {
-                self.state.new_name = self.state.file.as_ref().expect("the file page shows an entry").name.clone();
+                self.state.new_name = self
+                    .state
+                    .file
+                    .as_ref()
+                    .expect("the file page shows an entry")
+                    .name
+                    .clone();
                 self.state.layer = Layer::Letters;
                 self.open(Screen::Rename);
             }
             Action::EditEntry => return vec![Effect::OpenText(self.entry_path())],
             Action::InstallEntry => {
-                let size = self.state.file.as_ref().expect("the file page shows an entry").size;
+                let size = self
+                    .state
+                    .file
+                    .as_ref()
+                    .expect("the file page shows an entry")
+                    .size;
                 return self.install_opened(self.entry_path(), size, now);
             }
             Action::SaveText => {
-                let ed = self.state.editor.as_ref().expect("the editor page shows a file");
-                return vec![Effect::SaveText { path: ed.path.clone(), text: ed.text() }];
+                let ed = self
+                    .state
+                    .editor
+                    .as_ref()
+                    .expect("the editor page shows a file");
+                return vec![Effect::SaveText {
+                    path: ed.path.clone(),
+                    text: ed.text(),
+                }];
             }
             Action::OpenPermissions => self.open(Screen::Permissions),
             Action::ModeBit(bit) => {
-                let mode = self.state.file.as_ref().expect("the permissions page shows an entry").mode;
-                return vec![Effect::SetMode { path: self.entry_path(), mode: (mode ^ bit) & 0o7777 }];
+                let mode = self
+                    .state
+                    .file
+                    .as_ref()
+                    .expect("the permissions page shows an entry")
+                    .mode;
+                return vec![Effect::SetMode {
+                    path: self.entry_path(),
+                    mode: (mode ^ bit) & 0o7777,
+                }];
             }
             Action::AskDelete => {
                 self.state.asking_delete = true;
@@ -214,10 +335,19 @@ impl App {
                     self.state.clip = None;
                     return Vec::new();
                 }
-                return vec![Effect::Paste { op: clip.op, path: clip.path, into, clash: Some(choice) }];
+                return vec![Effect::Paste {
+                    op: clip.op,
+                    path: clip.path,
+                    into,
+                    clash: Some(choice),
+                }];
             }
             Action::StopJob => {
-                let job = self.state.job.as_mut().expect("only work under way is stopped");
+                let job = self
+                    .state
+                    .job
+                    .as_mut()
+                    .expect("only work under way is stopped");
                 if job.outcome.is_none() && !job.stopping {
                     job.stopping = true;
                     self.refresh();
@@ -225,7 +355,11 @@ impl App {
                 }
             }
             Action::StopRelabel => {
-                let job = self.state.relabel.as_mut().expect("only work under way is stopped");
+                let job = self
+                    .state
+                    .relabel
+                    .as_mut()
+                    .expect("only work under way is stopped");
                 if job.outcome.is_none() && !job.stopping {
                     job.stopping = true;
                     self.refresh();
@@ -238,7 +372,9 @@ impl App {
                 self.open(Screen::Filesystem);
             }
             Action::ChooseFs(choice) => {
-                let row = self.fs_row().expect("the page of a partition shows one that was read");
+                let row = self
+                    .fs_row()
+                    .expect("the page of a partition shows one that was read");
                 let action = match choice {
                     FsChoice::Repair => FsAction::Repair,
                     FsChoice::Remake(k) => FsAction::Remake(row.others[k].clone()),
@@ -271,18 +407,36 @@ impl App {
             // All a backup holds is ticked to restore at first.
             Action::OpenBackup(i) => {
                 let entry = self.state.backups[i].clone();
-                let parts = entry.held.as_ref().map_or([false; 5], |h| h.parts);
+                let parts = entry.held.as_ref().map_or([false; 6], |h| h.parts);
                 self.state.restore = Some((entry, parts));
                 self.state.asking_delete = false;
                 self.open(Screen::RestoreBackup);
             }
             Action::RestorePart(k) => {
-                let (_, parts) = self.state.restore.as_mut().expect("the restore page shows a backup");
+                let (_, parts) = self
+                    .state
+                    .restore
+                    .as_mut()
+                    .expect("the restore page shows a backup");
                 parts[k].toggle();
                 self.refresh();
             }
+            Action::RenameBackup => {
+                let entry = self
+                    .state
+                    .restore
+                    .as_ref()
+                    .expect("the rename is for the backup the page shows");
+                self.state.new_name = entry.0.name.clone();
+                self.state.layer = Layer::Letters;
+                self.open(Screen::RenameBackup);
+            }
             Action::StopBackup => {
-                let job = self.state.backup_job.as_mut().expect("only work under way is stopped");
+                let job = self
+                    .state
+                    .backup_job
+                    .as_mut()
+                    .expect("only work under way is stopped");
                 if job.outcome.is_none() && !job.stopping {
                     job.stopping = true;
                     self.refresh();
@@ -304,7 +458,11 @@ impl App {
                 } else if storage && !self.state.data.storage_open() {
                     self.say(l.pick(DECRYPT_FIRST), now);
                 } else {
-                    return vec![Effect::ExportLogs { recovery, kernel, storage }];
+                    return vec![Effect::ExportLogs {
+                        recovery,
+                        kernel,
+                        storage,
+                    }];
                 }
             }
             Action::PickSlot(slot) => {
@@ -315,7 +473,11 @@ impl App {
             Action::Type(cap) if self.screen() == Screen::Editor => self.edit_typed(cap),
             Action::Type(cap) => return self.type_key(cap, now),
             Action::TermKey(key) if self.screen() == Screen::Editor => {
-                let ed = self.state.editor.as_mut().expect("the editor page shows a file");
+                let ed = self
+                    .state
+                    .editor
+                    .as_mut()
+                    .expect("the editor page shows a file");
                 match key {
                     TermKey::Tab => ed.insert('\t'),
                     TermKey::Left => ed.left(),
@@ -328,7 +490,9 @@ impl App {
                 self.refresh_text();
             }
             Action::TermKey(key) => {
-                let Some(term) = self.term.as_mut() else { return Vec::new() };
+                let Some(term) = self.term.as_mut() else {
+                    return Vec::new();
+                };
                 let bytes = term.key(key);
                 let running = term.running;
                 self.refresh();
@@ -349,7 +513,12 @@ impl App {
                         self.state.files.leave(scroll);
                         return vec![Effect::ReadDir(self.state.files.inside(&entry.name))];
                     }
-                    FileKind::File if matches!(files::file_type(&entry.name), FileType::Text | FileType::Code) => {
+                    FileKind::File
+                        if matches!(
+                            files::file_type(&entry.name),
+                            FileType::Text | FileType::Code
+                        ) =>
+                    {
                         return vec![Effect::OpenText(self.state.files.inside(&entry.name))];
                     }
                     _ if installs(&entry) => {
@@ -377,17 +546,37 @@ impl App {
             }
             Action::ChooseEntry(i) => {
                 let screen = self.screen();
-                let Screen::Choose(place) = screen else { unreachable!("only a place's folder is chosen in") };
+                let Screen::Choose(place) = screen else {
+                    unreachable!("only a place's folder is chosen in")
+                };
                 let folder = self.state.folder(screen);
                 let entry = folder.entry(i).clone();
                 let path = folder.inside(&entry.name);
+                // Choosing a file while the install queue is armed adds
+                // it to the queue; a directory still opens so that one can
+                // browse into it.
+                if self.state.queue_add {
+                    match entry.kind {
+                        FileKind::File | FileKind::Link { folder: false, .. } => {
+                            self.state.queue_add = false;
+                            self.open(Screen::Install);
+                            if !self.queue_add(place, path, entry.size) {
+                                self.say(l.pick(texts::install::QUEUE_ONLY_ZIP), now);
+                            }
+                            return Vec::new();
+                        }
+                        _ => {}
+                    }
+                }
                 match entry.kind {
                     FileKind::Folder { .. } | FileKind::Link { folder: true, .. } => {
                         let scroll = self.top().1;
                         self.state.folder_mut(screen).leave(scroll);
                         return vec![Effect::ReadPlace(place, path)];
                     }
-                    FileKind::File | FileKind::Link { folder: false, .. } => return self.install_file(place, path, entry.size, now),
+                    FileKind::File | FileKind::Link { folder: false, .. } => {
+                        return self.install_file(place, path, entry.size, now);
+                    }
                     FileKind::Special => unreachable!("a place lists no special files"),
                 }
             }
@@ -401,15 +590,23 @@ impl App {
                 }
             }
             Action::JoinNetwork(i) => {
-                let w = self.state.wlan.as_ref().expect("networks show on a phone whose WLAN is brought up");
+                let w = self
+                    .state
+                    .wlan
+                    .as_ref()
+                    .expect("networks show on a phone whose WLAN is brought up");
                 // A scan may have changed the list since the page was drawn.
-                let Some(network) = w.networks.get(i).cloned() else { return Vec::new() };
+                let Some(network) = w.networks.get(i).cloned() else {
+                    return Vec::new();
+                };
                 if w.joined.as_ref().is_some_and(|j| j.ssid == network.ssid) {
                     return self.act(Action::OpenJoined, now);
                 }
                 match network.security {
                     Security::Wep => self.say(l.pick(texts::toast::WEP_UNSUPPORTED), now),
-                    Security::Enterprise => self.say(l.pick(texts::toast::ENTERPRISE_UNSUPPORTED), now),
+                    Security::Enterprise => {
+                        self.say(l.pick(texts::toast::ENTERPRISE_UNSUPPORTED), now)
+                    }
                     s if s.password() => self.ask_password(network),
                     _ => {
                         return vec![Effect::JoinWlan {
@@ -417,19 +614,31 @@ impl App {
                             name: network.name,
                             security: network.security,
                             password: Secret::default(),
-                        }]
+                        }];
                     }
                 }
             }
             Action::NetworkDetails(i) => {
-                let w = self.state.wlan.as_ref().expect("networks show on a phone whose WLAN is brought up");
-                let Some(network) = w.networks.get(i).cloned() else { return Vec::new() };
+                let w = self
+                    .state
+                    .wlan
+                    .as_ref()
+                    .expect("networks show on a phone whose WLAN is brought up");
+                let Some(network) = w.networks.get(i).cloned() else {
+                    return Vec::new();
+                };
                 self.state.details = Some(network);
                 self.open(Screen::WlanNetwork);
             }
             Action::OpenJoined => {
-                let w = self.state.wlan.as_ref().expect("a network is chosen on a phone whose WLAN is brought up");
-                let Some(j) = w.joined.clone() else { return Vec::new() };
+                let w = self
+                    .state
+                    .wlan
+                    .as_ref()
+                    .expect("a network is chosen on a phone whose WLAN is brought up");
+                let Some(j) = w.joined.clone() else {
+                    return Vec::new();
+                };
                 // As found, where it still is; as it was chosen otherwise.
                 let found = w.networks.iter().find(|n| n.ssid == j.ssid).cloned();
                 let network = found.unwrap_or(Network {
@@ -454,28 +663,45 @@ impl App {
             }
             Action::Rescan => return vec![Effect::ScanWlan],
             Action::AddNetwork => {
-                self.state.adding = Some(Adding { name: String::new(), security: Security::Open, field: Field::Name, choosing: false });
+                self.state.adding = Some(Adding {
+                    name: String::new(),
+                    security: Security::Open,
+                    field: Field::Name,
+                    choosing: false,
+                });
                 self.state.password.clear();
                 self.state.show_password = false;
                 self.state.layer = Layer::Letters;
                 self.open(Screen::WlanAdd);
             }
             Action::TypeInto(field) => {
-                let a = self.state.adding.as_mut().expect("the fields are on the page that adds a network");
+                let a = self
+                    .state
+                    .adding
+                    .as_mut()
+                    .expect("the fields are on the page that adds a network");
                 if a.field != field {
                     a.field = field;
                     self.refresh();
                 }
             }
             Action::ChooseSecurity => {
-                self.state.adding.as_mut().expect("the protection is on the page that adds a network").choosing = true;
+                self.state
+                    .adding
+                    .as_mut()
+                    .expect("the protection is on the page that adds a network")
+                    .choosing = true;
                 // The page draws the row held down while its list is open.
                 self.row_press = None;
                 self.row_art = None;
                 self.refresh();
             }
             Action::PickSecurity(security) => {
-                let a = self.state.adding.as_mut().expect("the protections open on the page that adds a network");
+                let a = self
+                    .state
+                    .adding
+                    .as_mut()
+                    .expect("the protections open on the page that adds a network");
                 a.security = security;
                 a.choosing = false;
                 // With no password to type, the keyboard types the name.
@@ -485,7 +711,11 @@ impl App {
                 self.refresh();
             }
             Action::CloseChoices => {
-                self.state.adding.as_mut().expect("the protections open on the page that adds a network").choosing = false;
+                self.state
+                    .adding
+                    .as_mut()
+                    .expect("the protections open on the page that adds a network")
+                    .choosing = false;
                 self.refresh();
             }
             // Asking takes a network, which the WLAN page joins.
@@ -503,7 +733,11 @@ impl App {
             // The package goes to internal storage, which the decrypt page
             // opens, over a network the WLAN page joins.
             Action::Download => {
-                let release = self.state.newest().expect("the download is offered for the newest system").clone();
+                let release = self
+                    .state
+                    .newest()
+                    .expect("the download is offered for the newest system")
+                    .clone();
                 if !self.state.data.storage_open() {
                     self.open(Screen::Decrypt);
                     return self.arrive_at(Screen::Decrypt);
@@ -513,13 +747,22 @@ impl App {
                     return self.arrive_at(Screen::Wlan);
                 }
                 if !self.state.downloading() {
-                    self.state.download = Some(DownloadJob { progress: None, rate: 0, outcome: None, stopping: false });
+                    self.state.download = Some(DownloadJob {
+                        progress: None,
+                        rate: 0,
+                        outcome: None,
+                        stopping: false,
+                    });
                     self.refresh();
                     return vec![Effect::Download(release)];
                 }
             }
             Action::StopDownload => {
-                let job = self.state.download.as_mut().expect("only a download under way is stopped");
+                let job = self
+                    .state
+                    .download
+                    .as_mut()
+                    .expect("only a download under way is stopped");
                 if job.outcome.is_none() && !job.stopping {
                     job.stopping = true;
                     self.refresh();
@@ -527,8 +770,15 @@ impl App {
                 }
             }
             Action::InstallDownloaded => {
-                let name = self.state.newest().expect("the package installed is the newest system's").name.clone();
-                let Have::Whole(size) = self.state.have else { unreachable!("only a whole package is offered to install") };
+                let name = self
+                    .state
+                    .newest()
+                    .expect("the package installed is the newest system's")
+                    .name
+                    .clone();
+                let Have::Whole(size) = self.state.have else {
+                    unreachable!("only a whole package is offered to install")
+                };
                 return self.install_file(Place::Storage, format!("{DOWNLOADS}/{name}"), size, now);
             }
             // Asking takes a network, which the WLAN page joins.
@@ -546,7 +796,11 @@ impl App {
             // The build goes into the recovery partitions an install may
             // write too, so one waits for the other.
             Action::UpdateSkyward => {
-                let build = self.state.skyward_newest().and_then(|n| n.build.clone()).expect("the update is offered for the newest release's build");
+                let build = self
+                    .state
+                    .skyward_newest()
+                    .and_then(|n| n.build.clone())
+                    .expect("the update is offered for the newest release's build");
                 if !self.state.online() {
                     self.open(Screen::Wlan);
                     return self.arrive_at(Screen::Wlan);
@@ -556,7 +810,12 @@ impl App {
                     return Vec::new();
                 }
                 if !self.state.updating_skyward() {
-                    self.state.skyward_job = Some(SkywardJob { stage: None, rate: 0, outcome: None, stopping: false });
+                    self.state.skyward_job = Some(SkywardJob {
+                        stage: None,
+                        rate: 0,
+                        outcome: None,
+                        stopping: false,
+                    });
                     self.refresh();
                     return vec![Effect::UpdateSkyward(build)];
                 }
@@ -564,8 +823,15 @@ impl App {
             // Only the download stops: writing, once begun, goes on to its
             // end.
             Action::StopSkywardUpdate => {
-                let job = self.state.skyward_job.as_mut().expect("only an update under way is stopped");
-                if job.outcome.is_none() && !job.stopping && !matches!(job.stage, Some(SkywardStage::Write { .. })) {
+                let job = self
+                    .state
+                    .skyward_job
+                    .as_mut()
+                    .expect("only an update under way is stopped");
+                if job.outcome.is_none()
+                    && !job.stopping
+                    && !matches!(job.stage, Some(SkywardStage::Write { .. }))
+                {
                     job.stopping = true;
                     self.refresh();
                     return vec![Effect::StopSkywardUpdate];
@@ -583,6 +849,10 @@ impl App {
             Screen::Decrypt => &mut self.state.code,
             Screen::Rename => &mut self.state.new_name,
             Screen::WlanPassword => &mut self.state.password,
+            Screen::BackupPassword => &mut self.state.backup_password,
+            Screen::WipeYes => &mut self.state.wipe_yes,
+            Screen::RestorePassword => &mut self.state.restore_password,
+            Screen::RenameBackup => &mut self.state.new_name,
             Screen::WlanAdd => {
                 let a = self.state.adding.as_mut().expect("the page adds a network");
                 match a.field {
@@ -601,7 +871,8 @@ impl App {
         match cap {
             Cap::Char(ch) => {
                 let shifted = self.state.layer == Layer::Shifted;
-                self.typing().push(if shifted { ch.to_ascii_uppercase() } else { ch });
+                self.typing()
+                    .push(if shifted { ch.to_ascii_uppercase() } else { ch });
                 self.edits += 1;
                 if shifted {
                     self.state.layer = Layer::Letters;
@@ -616,16 +887,26 @@ impl App {
                 self.edits += 1;
             }
             Cap::Shift => {
-                self.state.layer = if self.state.layer == Layer::Shifted { Layer::Letters } else { Layer::Shifted };
+                self.state.layer = if self.state.layer == Layer::Shifted {
+                    Layer::Letters
+                } else {
+                    Layer::Shifted
+                };
             }
             Cap::Show(layer) => self.state.layer = layer,
             Cap::Enter => match self.screen() {
                 Screen::Search => {
-                    if let Some(first) = search::find_on(&self.state.search, l, |screen| self.state.offers(screen)).first() {
+                    if let Some(first) =
+                        search::find_on(&self.state.search, l, |screen| self.state.offers(screen))
+                            .first()
+                    {
                         return self.act(Action::Open(first.screen), now);
                     }
                 }
-                Screen::Decrypt if self.state.code.is_empty() => self.say(l.pick(texts::toast::ENTER_LOCK), now),
+                Screen::WipeYes => return self.act(Action::WipeYes, now),
+                Screen::Decrypt if self.state.code.is_empty() => {
+                    self.say(l.pick(texts::toast::ENTER_LOCK), now)
+                }
                 Screen::Decrypt => {
                     let code = std::mem::take(&mut self.state.code);
                     return self.unlock(code);
@@ -634,28 +915,121 @@ impl App {
                 // the user's words; an unchanged one leaves the page.
                 Screen::Rename => {
                     let name = self.state.new_name.clone();
-                    let current = &self.state.file.as_ref().expect("the file page shows an entry").name;
-                    let taken = self.state.files.entries.as_ref().is_ok_and(|entries| entries.iter().any(|e| e.name == name));
+                    let current = &self
+                        .state
+                        .file
+                        .as_ref()
+                        .expect("the file page shows an entry")
+                        .name;
+                    let taken = self
+                        .state
+                        .files
+                        .entries
+                        .as_ref()
+                        .is_ok_and(|entries| entries.iter().any(|e| e.name == name));
                     match name.as_str() {
                         "" => self.say(l.pick(texts::toast::ENTER_NAME), now),
                         "." | ".." => self.say(l.pick(texts::toast::NAME_DOTS), now),
                         _ if name.contains('/') => self.say(l.pick(texts::toast::NAME_SLASH), now),
                         _ if name == *current => return self.back(now),
                         _ if taken => self.say_taken(now),
-                        _ => return vec![Effect::Rename { path: self.entry_path(), name }],
+                        _ => {
+                            return vec![Effect::Rename {
+                                path: self.entry_path(),
+                                name,
+                            }];
+                        }
                     }
                 }
                 // A password the network's protection cannot take is turned
                 // down here; one it can goes, and the WLAN page shows how
                 // joining goes.
                 Screen::WlanPassword => {
-                    let network = self.state.joining.clone().expect("the password page is for a network");
+                    let network = self
+                        .state
+                        .joining
+                        .clone()
+                        .expect("the password page is for a network");
                     match refused(l, network.security, &self.state.password) {
                         Some(why) => self.say(why, now),
                         None => {
                             let password = Secret(std::mem::take(&mut self.state.password));
                             let mut fx = self.back(now);
-                            fx.push(Effect::JoinWlan { ssid: network.ssid, name: network.name, security: network.security, password });
+                            fx.push(Effect::JoinWlan {
+                                ssid: network.ssid,
+                                name: network.name,
+                                security: network.security,
+                                password,
+                            });
+                            return fx;
+                        }
+                    }
+                }
+                // A passphrase of six characters at least starts the
+                // encrypted backup; a shorter one stays typed.
+                Screen::BackupPassword => {
+                    let typed = std::mem::take(&mut self.state.backup_password);
+                    if typed.chars().count() < 6 {
+                        self.state.backup_password = typed;
+                        self.say(l.pick(texts::backup::PASSPHRASE_SHORT), now);
+                    } else if let Some(why) = self.backup_refused() {
+                        self.state.backup_password = typed;
+                        self.say(l.pick(why), now);
+                    } else {
+                        let mut fx = self.back(now);
+                        fx.push(self.backup_effect(Some(Secret(typed))));
+                        return fx;
+                    }
+                }
+                // The passphrase an encrypted backup is read with starts
+                // its restore; it cannot be empty.
+                Screen::RestorePassword => {
+                    let typed = std::mem::take(&mut self.state.restore_password);
+                    match (typed.is_empty(), self.restore_refused()) {
+                        (true, _) => {
+                            self.state.restore_password = typed;
+                            self.say(l.pick(texts::toast::ENTER_PASSPHRASE), now);
+                        }
+                        (false, Some(why)) => {
+                            self.state.restore_password = typed;
+                            self.say(l.pick(why), now);
+                        }
+                        (false, None) => {
+                            let mut fx = self.back(now);
+                            fx.push(self.restore_effect(Some(Secret(typed))));
+                            return fx;
+                        }
+                    }
+                }
+                // A name no backup in the same place has, and which is
+                // not the one it has now, renames the backup.
+                Screen::RenameBackup => {
+                    let name = self.state.new_name.clone();
+                    let (place, current) = self
+                        .state
+                        .restore
+                        .as_ref()
+                        .map(|(entry, _)| (entry.place, entry.name.clone()))
+                        .expect("the rename page shows a backup");
+                    let taken = name != current
+                        && self
+                            .state
+                            .backups
+                            .iter()
+                            .any(|b| b.place == place && b.name == name);
+                    match name.as_str() {
+                        "" => self.say(l.pick(texts::toast::ENTER_NAME), now),
+                        "." | ".." => self.say(l.pick(texts::toast::NAME_DOTS), now),
+                        _ if name.contains('/') => self.say(l.pick(texts::toast::NAME_SLASH), now),
+                        _ if name == current => return self.back(now),
+                        _ if taken => self.say(&texts::toast::name_taken(l, &name), now),
+                        _ => {
+                            let mut fx = self.back(now);
+                            fx.push(Effect::RenameBackup {
+                                place,
+                                from: current,
+                                to: name,
+                            });
                             return fx;
                         }
                     }
@@ -665,9 +1039,18 @@ impl App {
                 Screen::WlanAdd => {
                     let a = self.state.adding.as_mut().expect("the page adds a network");
                     let (field, why) = match a.name.len() {
-                        0 => (Field::Name, Some(l.pick(texts::toast::ENTER_NETWORK_NAME).to_string())),
-                        n if n > SSID_MAX => (Field::Name, Some(texts::toast::network_name_long(l, SSID_MAX))),
-                        _ if a.security.password() => (Field::Password, refused(l, a.security, &self.state.password).map(str::to_string)),
+                        0 => (
+                            Field::Name,
+                            Some(l.pick(texts::toast::ENTER_NETWORK_NAME).to_string()),
+                        ),
+                        n if n > SSID_MAX => (
+                            Field::Name,
+                            Some(texts::toast::network_name_long(l, SSID_MAX)),
+                        ),
+                        _ if a.security.password() => (
+                            Field::Password,
+                            refused(l, a.security, &self.state.password).map(str::to_string),
+                        ),
                         _ => (Field::Name, None),
                     };
                     match why {
@@ -685,7 +1068,12 @@ impl App {
                                 false => Secret::default(),
                             };
                             let mut fx = self.back(now);
-                            fx.push(Effect::JoinWlan { ssid: name.clone().into_bytes(), name, security, password });
+                            fx.push(Effect::JoinWlan {
+                                ssid: name.clone().into_bytes(),
+                                name,
+                                security,
+                                password,
+                            });
                             return fx;
                         }
                     }
@@ -697,11 +1085,84 @@ impl App {
         // while its keys do.
         if matches!(cap, Cap::Char(_) | Cap::Space | Cap::Backspace) && self.state.layer == layer {
             let t = self.theme();
-            self.refresh_rows(0, (t.m.h as f32 - widgets::keyboard_height(&t)).floor() as u32);
+            self.refresh_rows(
+                0,
+                (t.m.h as f32 - widgets::keyboard_height(&t)).floor() as u32,
+            );
         } else {
             self.refresh();
         }
         Vec::new()
+    }
+
+    /// Why a backup cannot start as the page has it, or nothing.
+    fn backup_refused(&self) -> Option<Text> {
+        let s = &self.state;
+        if !s.backup.contains(&true) {
+            Some(texts::toast::CHOOSE_BACKUP)
+        } else if (s.backup[DATA_PART] || s.backup[MEDIA_PART]) && s.data != Data::Open {
+            Some(texts::toast::DECRYPT_TO_BACK_UP)
+        } else if s.place_open(s.backup_to) {
+            None
+        } else {
+            Some(match (s.backup_to, &s.usb_drive) {
+                (Place::Storage, _) if s.data == Data::Erased => DATA_ERASED,
+                (Place::Storage, _) => DECRYPT_FIRST,
+                (Place::UsbDrive, Some(UsbDrive::Unreadable(_))) => USB_DRIVE_UNREADABLE,
+                (Place::UsbDrive, _) => USB_DRIVE_WANTED,
+            })
+        }
+    }
+
+    /// The backup the page has, with `password` when it is encrypted.
+    fn backup_effect(&self, password: Option<Secret>) -> Effect {
+        let s = &self.state;
+        Effect::Backup {
+            parts: s.backup,
+            place: s.backup_to,
+            compress: s.compress,
+            verify: s.verify,
+            password,
+        }
+    }
+
+    /// Why the backup the restore page shows cannot be restored as it
+    /// stands, or nothing.
+    fn restore_refused(&self) -> Option<Text> {
+        let (_, parts) = self
+            .state
+            .restore
+            .as_ref()
+            .expect("the restore page shows a backup");
+        // The files of the data partition and of internal storage go back
+        // into a data partition that is open: one erased is made again by
+        // the system, as it next starts.
+        let files = parts[DATA_PART] || parts[MEDIA_PART];
+        if !parts.contains(&true) {
+            Some(texts::toast::CHOOSE_RESTORE)
+        } else if files && self.state.data == Data::Erased {
+            Some(texts::toast::RESTORE_ONCE_MADE)
+        } else if files && self.state.data != Data::Open {
+            Some(texts::toast::DECRYPT_TO_RESTORE)
+        } else {
+            None
+        }
+    }
+
+    /// The restore the page has, with `password` when the backup is
+    /// encrypted.
+    fn restore_effect(&self, password: Option<Secret>) -> Effect {
+        let (entry, parts) = self
+            .state
+            .restore
+            .as_ref()
+            .expect("the restore page shows a backup");
+        Effect::Restore {
+            place: entry.place,
+            name: entry.name.clone(),
+            parts: *parts,
+            password,
+        }
     }
 
     /// What a swipe-to-confirm control slid to its end does.
@@ -710,7 +1171,12 @@ impl App {
         match which {
             Confirm::Reboot => fx.push(Effect::Reboot(TARGETS[self.state.reboot])),
             Confirm::Wipe => {
-                let chosen: Vec<Wipe> = WIPES.iter().zip(self.state.wipe).filter(|(_, on)| *on).map(|(&w, _)| w).collect();
+                let chosen: Vec<Wipe> = WIPES
+                    .iter()
+                    .zip(self.state.wipe)
+                    .filter(|(_, on)| *on)
+                    .map(|(&w, _)| w)
+                    .collect();
                 match chosen.is_empty() {
                     true => self.say(l.pick(texts::toast::CHOOSE_WIPE), now),
                     false => fx.push(Effect::Wipe(chosen)),
@@ -718,64 +1184,82 @@ impl App {
             }
             Confirm::Install | Confirm::InstallWipe => {
                 if let Install::Confirming { version, .. } = &self.state.install {
-                    self.state.install = Install::Updating { version: version.clone(), stage: None, overwriting: false };
+                    self.state.install = Install::Updating {
+                        version: version.clone(),
+                        stage: None,
+                        overwriting: false,
+                    };
                     fx.push(Effect::Install);
                     self.refresh();
                 }
             }
             Confirm::RunScript => {
                 if self.state.install == Install::ConfirmingScript {
-                    self.state.install = Install::Scripting { stage: None, running: false };
+                    self.state.install = Install::Scripting {
+                        stage: None,
+                        running: false,
+                    };
                     fx.push(Effect::Install);
                     self.refresh();
                 }
             }
-            Confirm::Backup => {
-                let s = &self.state;
-                let refused = if !s.backup.contains(&true) {
-                    Some(texts::toast::CHOOSE_BACKUP)
-                } else if (s.backup[DATA_PART] || s.backup[MEDIA_PART]) && s.data != Data::Open {
-                    Some(texts::toast::DECRYPT_TO_BACK_UP)
-                } else if s.place_open(s.backup_to) {
-                    None
-                } else {
-                    Some(match (s.backup_to, &s.usb_drive) {
-                        (Place::Storage, _) if s.data == Data::Erased => DATA_ERASED,
-                        (Place::Storage, _) => DECRYPT_FIRST,
-                        (Place::UsbDrive, Some(UsbDrive::Unreadable(_))) => USB_DRIVE_UNREADABLE,
-                        (Place::UsbDrive, _) => USB_DRIVE_WANTED,
-                    })
-                };
-                let backup = Effect::Backup { parts: s.backup, place: s.backup_to, compress: s.compress, verify: s.verify };
-                match refused {
-                    Some(why) => self.say(l.pick(why), now),
-                    None => fx.push(backup),
+            Confirm::Backup => match self.backup_refused() {
+                Some(why) => self.say(l.pick(why), now),
+                None if self.state.encrypt && self.state.backup_password.is_empty() => {
+                    self.state.backup_password.clear();
+                    self.state.show_password = false;
+                    self.state.layer = Layer::Letters;
+                    self.open(Screen::BackupPassword);
                 }
-            }
-            Confirm::Restore => {
-                let (entry, parts) = self.state.restore.as_ref().expect("the restore page shows a backup");
-                let restore = Effect::Restore { place: entry.place, name: entry.name.clone(), parts: *parts };
-                // The files of the data partition and of internal storage go
-                // back into a data partition that is open: one erased is
-                // made again by the system, as it next starts.
-                let files = parts[DATA_PART] || parts[MEDIA_PART];
-                if !parts.contains(&true) {
-                    self.say(l.pick(texts::toast::CHOOSE_RESTORE), now);
-                } else if files && self.state.data == Data::Erased {
-                    self.say(l.pick(texts::toast::RESTORE_ONCE_MADE), now);
-                } else if files && self.state.data != Data::Open {
-                    self.say(l.pick(texts::toast::DECRYPT_TO_RESTORE), now);
-                } else {
-                    fx.push(restore);
+                None => {
+                    let password = self
+                        .state
+                        .encrypt
+                        .then(|| Secret(self.state.backup_password.clone()));
+                    fx.push(self.backup_effect(password));
                 }
-            }
+            },
+            Confirm::Restore => match self.restore_refused() {
+                Some(why) => self.say(l.pick(why), now),
+                None => {
+                    let encrypted =
+                        self.state.restore.as_ref().is_some_and(|(entry, _)| {
+                            entry.held.as_ref().is_ok_and(|h| h.encrypted)
+                        });
+                    match encrypted && self.state.restore_password.is_empty() {
+                        true => {
+                            self.state.restore_password.clear();
+                            self.state.show_password = false;
+                            self.state.layer = Layer::Letters;
+                            self.open(Screen::RestorePassword);
+                        }
+                        false => {
+                            let password =
+                                encrypted.then(|| Secret(self.state.restore_password.clone()));
+                            fx.push(self.restore_effect(password));
+                        }
+                    }
+                }
+            },
             Confirm::DeleteBackup => {
-                let (entry, _) = self.state.restore.as_ref().expect("the restore page shows a backup");
-                fx.push(Effect::DeleteBackup { place: entry.place, name: entry.name.clone() });
+                let (entry, _) = self
+                    .state
+                    .restore
+                    .as_ref()
+                    .expect("the restore page shows a backup");
+                fx.push(Effect::DeleteBackup {
+                    place: entry.place,
+                    name: entry.name.clone(),
+                });
             }
             Confirm::Slot => match (&self.state.boot_slots, self.state.next_slot) {
-                (Some(Ok(slots)), Some(pick)) if pick != slots.active => fx.push(Effect::SetSlot(pick)),
-                (Some(Ok(slots)), _) => self.say(&texts::toast::slot_already_next(l, slots.active.letter()), now),
+                (Some(Ok(slots)), Some(pick)) if pick != slots.active => {
+                    fx.push(Effect::SetSlot(pick))
+                }
+                (Some(Ok(slots)), _) => self.say(
+                    &texts::toast::slot_already_next(l, slots.active.letter()),
+                    now,
+                ),
                 _ => self.say(l.pick(texts::slot::UNREADABLE), now),
             },
             Confirm::FactoryReset => fx.push(Effect::FactoryReset),
@@ -793,29 +1277,44 @@ impl App {
                 Data::Open | Data::Locked { .. } => fx.push(Effect::Relabel),
                 Data::Opening => self.say(l.pick(DATA_OPENING), now),
                 Data::Erased => self.say(l.pick(DATA_ERASED), now),
-                Data::Closed | Data::Failed(_) => self.say(l.pick(texts::toast::OPEN_DATA_FIRST), now),
+                Data::Closed | Data::Failed(_) => {
+                    self.say(l.pick(texts::toast::OPEN_DATA_FIRST), now)
+                }
             },
             // The data partition is reached through its own key whether or
             // not it is open, but not while it is being opened or erased.
             Confirm::Filesystem => {
-                let row = self.fs_row().expect("the page of a partition shows one that was read");
+                let row = self
+                    .fs_row()
+                    .expect("the page of a partition shows one that was read");
                 let data = row.name == DATA_PARTITION;
                 match (&self.state.fs_action, &self.state.data) {
                     (_, Data::Opening) if data => self.say(l.pick(DATA_OPENING), now),
                     (FsAction::Repair, Data::Erased) if data => self.say(l.pick(DATA_ERASED), now),
-                    (action, _) => fx.push(Effect::Filesystem { name: row.name.clone(), action: action.clone() }),
+                    (action, _) => fx.push(Effect::Filesystem {
+                        name: row.name.clone(),
+                        action: action.clone(),
+                    }),
                 }
             }
             Confirm::Flash => {
                 if let Install::Choosing(choice) = &self.state.install {
                     let FlashTarget { name, place } = choice.partitions[choice.partition].clone();
-                    fx.push(Effect::Flash { partition: name.clone(), place, pick: choice.pick });
-                    self.state.install = Install::Flashing { partition: name, stage: None };
+                    fx.push(Effect::Flash {
+                        partition: name.clone(),
+                        place,
+                        pick: choice.pick,
+                    });
+                    self.state.install = Install::Flashing {
+                        partition: name,
+                        stage: None,
+                    };
                     self.refresh();
                 }
             }
             Confirm::SwitchSystem => {
-                if let (Some(Ok(systems)), Some(pick)) = (&self.state.systems, self.state.system_pick)
+                if let (Some(Ok(systems)), Some(pick)) =
+                    (&self.state.systems, self.state.system_pick)
                     && pick != starting(systems)
                 {
                     fx.push(Effect::SwitchSystem(pick));
@@ -833,8 +1332,13 @@ impl App {
             }
             Confirm::InstallSystem => {
                 if let Install::SystemChoosing(choice) = &self.state.install {
-                    fx.push(Effect::InstallSystem { size: choice.sizes[choice.size] });
-                    self.state.install = Install::Systeming { name: choice.name.clone(), stage: None };
+                    fx.push(Effect::InstallSystem {
+                        size: choice.sizes[choice.size],
+                    });
+                    self.state.install = Install::Systeming {
+                        name: choice.name.clone(),
+                        stage: None,
+                    };
                     self.refresh();
                 }
             }
@@ -854,7 +1358,13 @@ mod tests {
         let mut app = opened(Screen::Search, &f, &i);
         type_text(&mut app, &f, &i, "bf");
         assert_eq!(app.state.search, "bf");
-        let opens: Vec<Action> = app.frame(&f, &i).hits.iter().map(|h| h.action).filter(|a| matches!(a, Action::Open(_))).collect();
+        let opens: Vec<Action> = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .map(|h| h.action)
+            .filter(|a| matches!(a, Action::Open(_)))
+            .collect();
         assert_eq!(opens, [Action::Open(Screen::Backup)]);
         tap(&mut app, &f, &i, Action::Type(Cap::Backspace));
         assert_eq!(app.state.search, "b");
@@ -862,7 +1372,11 @@ mod tests {
         assert_eq!(app.state.search, "");
         type_text(&mut app, &f, &i, "xpsj");
         tap(&mut app, &f, &i, Action::Type(Cap::Enter));
-        assert_eq!(app.screen(), Screen::ScreenOff, "return opens the first result");
+        assert_eq!(
+            app.screen(),
+            Screen::ScreenOff,
+            "return opens the first result"
+        );
         app.key(Key::Back, 0);
         assert_eq!(app.screen(), Screen::Search);
     }

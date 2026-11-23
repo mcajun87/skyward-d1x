@@ -5,7 +5,7 @@
 use anyhow::Result;
 use skyward_binder::driver::Binder;
 use skyward_crypto::data::{self, Closed, Opening};
-use skyward_crypto::keymint::KeyMint;
+use skyward_crypto::keymint::KeyService;
 use skyward_sys::worker::Worker;
 use std::os::fd::RawFd;
 
@@ -14,7 +14,11 @@ pub enum Job {
     Open,
     /// Open the own files of `user` with what they entered at their screen
     /// lock; `closed` are the users whose own files are still closed.
-    Unlock { closed: Vec<Closed>, user: u32, credential: Vec<u8> },
+    Unlock {
+        closed: Vec<Closed>,
+        user: u32,
+        credential: Vec<u8>,
+    },
 }
 
 /// How a job ended: what it opened, or why it did not.
@@ -35,9 +39,13 @@ impl Decryptor {
         let worker = Worker::start("decrypt", move |tell| {
             tell.tell(match job {
                 Job::Open => Ended::Opened(with_data_keys(data::open_without_credential)),
-                Job::Unlock { closed, user, credential } => {
-                    Ended::Unlocked(with_key_service(|service| data::unlock(service, &closed, user, &credential)))
-                }
+                Job::Unlock {
+                    closed,
+                    user,
+                    credential,
+                } => Ended::Unlocked(with_key_service(|service| {
+                    data::unlock(service, &closed, user, &credential)
+                })),
             });
         })?;
         Ok(Decryptor { worker })
@@ -56,10 +64,10 @@ impl Decryptor {
 
 /// Do `work` with the phone's key service, reached afresh for it, and say
 /// why it failed in words for the page.
-pub fn with_key_service<T>(work: impl FnOnce(&KeyMint) -> Result<T>) -> Result<T, String> {
+pub fn with_key_service<T>(work: impl FnOnce(&KeyService) -> Result<T>) -> Result<T, String> {
     let done = (|| {
         let binder = Binder::open()?;
-        let service = KeyMint::open(&binder)?;
+        let service = KeyService::open(&binder)?;
         work(&service)
     })();
     done.map_err(|e| format!("{e:#}"))
@@ -70,13 +78,13 @@ pub fn with_key_service<T>(work: impl FnOnce(&KeyMint) -> Result<T>) -> Result<T
 /// partition encrypted, and nothing where it has not, so that a partition
 /// kept as the plain filesystem it is opens on a phone whose key service
 /// does not start. Says why it failed in words for the page.
-pub fn with_data_keys<T>(work: impl FnOnce(Option<&KeyMint>) -> Result<T>) -> Result<T, String> {
+pub fn with_data_keys<T>(work: impl FnOnce(Option<&KeyService>) -> Result<T>) -> Result<T, String> {
     let done = (|| {
         if !data::keyed()? {
             return work(None);
         }
         let binder = Binder::open()?;
-        let service = KeyMint::open(&binder)?;
+        let service = KeyService::open(&binder)?;
         work(Some(&service))
     })();
     done.map_err(|e| format!("{e:#}"))

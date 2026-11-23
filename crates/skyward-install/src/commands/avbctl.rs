@@ -94,7 +94,15 @@ struct Phone<'a> {
 pub(super) fn run(args: &[OsString], io: &mut Io) -> i32 {
     let suffix = skyward_sys::prop("ro.boot.slot_suffix").unwrap_or_default();
     let locked = skyward_sys::prop("ro.boot.vbmeta.device_state").as_deref() == Some("locked");
-    avbctl(args, io, &Phone { by_name: Path::new(skyward_block::BY_NAME), suffix: &suffix, locked })
+    avbctl(
+        args,
+        io,
+        &Phone {
+            by_name: Path::new(skyward_block::BY_NAME),
+            suffix: &suffix,
+            locked,
+        },
+    )
 }
 
 fn avbctl(args: &[OsString], io: &mut Io, phone: &Phone) -> i32 {
@@ -108,7 +116,9 @@ fn avbctl(args: &[OsString], io: &mut Io, phone: &Phone) -> i32 {
             Some("disable-verity") => command = Some(Command::Set(Check::Verity, false)),
             Some("enable-verity") => command = Some(Command::Set(Check::Verity, true)),
             Some("get-verification") => command = Some(Command::Get(Check::Verification)),
-            Some("disable-verification") => command = Some(Command::Set(Check::Verification, false)),
+            Some("disable-verification") => {
+                command = Some(Command::Set(Check::Verification, false))
+            }
             Some("enable-verification") => command = Some(Command::Set(Check::Verification, true)),
             _ => {}
         }
@@ -122,7 +132,11 @@ fn avbctl(args: &[OsString], io: &mut Io, phone: &Phone) -> i32 {
         Ok(on) => on,
         Err(e) => {
             let _ = writeln!(io.errors, "avbctl: {e}");
-            let _ = writeln!(io.errors, "Error getting whether {} is enabled.", check.name());
+            let _ = writeln!(
+                io.errors,
+                "Error getting whether {} is enabled.",
+                check.name()
+            );
             return FAILED;
         }
     };
@@ -133,7 +147,10 @@ fn avbctl(args: &[OsString], io: &mut Io, phone: &Phone) -> i32 {
     let state = |on: bool| if on { "enabled" } else { "disabled" };
     match command {
         Command::Get(_) => say(io, &format!("{} is {}{slot}.\n", check.name(), state(on))),
-        Command::Set(_, want) if want == on => say(io, &format!("{} is already {}{slot}.\n", check.name(), state(on))),
+        Command::Set(_, want) if want == on => say(
+            io,
+            &format!("{} is already {}{slot}.\n", check.name(), state(on)),
+        ),
         Command::Set(_, want) => {
             if phone.locked && !force {
                 let _ = io.errors.write_all(LOCKED.as_bytes());
@@ -144,13 +161,24 @@ fn avbctl(args: &[OsString], io: &mut Io, phone: &Phone) -> i32 {
                 let _ = writeln!(io.errors, "Error setting {}.", check.name());
                 return FAILED;
             }
-            say(io, &format!("Successfully {} {}{slot}. Reboot the device for changes to take effect.\n", state(want), check.name()))
+            say(
+                io,
+                &format!(
+                    "Successfully {} {}{slot}. Reboot the device for changes to take effect.\n",
+                    state(want),
+                    check.name()
+                ),
+            )
         }
     }
 }
 
 fn say(io: &mut Io, text: &str) -> i32 {
-    match io.output.write_all(text.as_bytes()).and_then(|()| io.output.flush()) {
+    match io
+        .output
+        .write_all(text.as_bytes())
+        .and_then(|()| io.output.flush())
+    {
         Ok(()) => DONE,
         Err(_) => FAILED,
     }
@@ -168,14 +196,21 @@ fn is_on(phone: &Phone, check: Check) -> io::Result<bool> {
 /// rest of it as it was.
 fn set(phone: &Phone, check: Check, on: bool) -> io::Result<()> {
     let (path, at) = top_level(phone)?;
-    let mut file = OpenOptions::new().read(true).write(true).open(&path).map_err(|e| about(&path, e))?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .map_err(|e| about(&path, e))?;
     let mut header = header(&mut file, &path, at)?;
     let flags = match on {
         true => flags(&header) & !check.off(),
         false => flags(&header) | check.off(),
     };
     header[FLAGS_AT..FLAGS_AT + 4].copy_from_slice(&flags.to_be_bytes());
-    file.seek(SeekFrom::Start(at)).and_then(|_| file.write_all(&header)).and_then(|()| file.sync_all()).map_err(|e| about(&path, e))
+    file.seek(SeekFrom::Start(at))
+        .and_then(|_| file.write_all(&header))
+        .and_then(|()| file.sync_all())
+        .map_err(|e| about(&path, e))
 }
 
 /// Where the slot's top-level vbmeta image starts: at the start of its
@@ -189,27 +224,46 @@ fn top_level(phone: &Phone) -> io::Result<(PathBuf, u64)> {
     let boot = phone.by_name.join(format!("boot{}", phone.suffix));
     let mut file = File::open(&boot).map_err(|e| about(&boot, e))?;
     let mut footer = [0; FOOTER_LEN];
-    file.seek(SeekFrom::End(-(FOOTER_LEN as i64))).and_then(|_| file.read_exact(&mut footer)).map_err(|e| about(&boot, e))?;
+    file.seek(SeekFrom::End(-(FOOTER_LEN as i64)))
+        .and_then(|_| file.read_exact(&mut footer))
+        .map_err(|e| about(&boot, e))?;
     if !footer.starts_with(FOOTER_MAGIC) {
-        let why = format!("there is no {}, and {} does not end in a vbmeta footer", vbmeta.display(), boot.display());
+        let why = format!(
+            "there is no {}, and {} does not end in a vbmeta footer",
+            vbmeta.display(),
+            boot.display()
+        );
         return Err(io::Error::new(ErrorKind::InvalidData, why));
     }
-    let at = u64::from_be_bytes(footer[VBMETA_AT..VBMETA_AT + 8].try_into().expect("eight bytes"));
+    let at = u64::from_be_bytes(
+        footer[VBMETA_AT..VBMETA_AT + 8]
+            .try_into()
+            .expect("eight bytes"),
+    );
     Ok((boot, at))
 }
 
 /// The vbmeta header `at` bytes into `file`, the partition at `path`.
 fn header(file: &mut File, path: &Path, at: u64) -> io::Result<[u8; HEADER_LEN]> {
     let mut header = [0; HEADER_LEN];
-    file.seek(SeekFrom::Start(at)).and_then(|_| file.read_exact(&mut header)).map_err(|e| about(path, e))?;
+    file.seek(SeekFrom::Start(at))
+        .and_then(|_| file.read_exact(&mut header))
+        .map_err(|e| about(path, e))?;
     if !header.starts_with(MAGIC) {
-        return Err(io::Error::new(ErrorKind::InvalidData, format!("{} holds no vbmeta header {at} bytes in", path.display())));
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            format!("{} holds no vbmeta header {at} bytes in", path.display()),
+        ));
     }
     Ok(header)
 }
 
 fn flags(header: &[u8; HEADER_LEN]) -> u32 {
-    u32::from_be_bytes(header[FLAGS_AT..FLAGS_AT + 4].try_into().expect("four bytes"))
+    u32::from_be_bytes(
+        header[FLAGS_AT..FLAGS_AT + 4]
+            .try_into()
+            .expect("four bytes"),
+    )
 }
 
 /// `e`, saying which partition it came from.
@@ -238,8 +292,20 @@ mod tests {
     fn ran(args: &[&str], phone: &Phone) -> (i32, String, String) {
         let args: Vec<OsString> = args.iter().map(OsString::from).collect();
         let (mut output, mut errors) = (Vec::new(), Vec::new());
-        let code = avbctl(&args, &mut Io { input: &mut io::empty(), output: &mut output, errors: &mut errors }, phone);
-        (code, String::from_utf8(output).unwrap(), String::from_utf8(errors).unwrap())
+        let code = avbctl(
+            &args,
+            &mut Io {
+                input: &mut io::empty(),
+                output: &mut output,
+                errors: &mut errors,
+            },
+            phone,
+        );
+        (
+            code,
+            String::from_utf8(output).unwrap(),
+            String::from_utf8(errors).unwrap(),
+        )
     }
 
     #[test]
@@ -248,18 +314,50 @@ mod tests {
         let (a, b) = (dir.path().join("vbmeta_a"), dir.path().join("vbmeta_b"));
         fs::write(&a, vbmeta(0)).unwrap();
         fs::write(&b, vbmeta(0)).unwrap();
-        let phone = Phone { by_name: dir.path(), suffix: "_a", locked: false };
-        assert_eq!(ran(&["get-verity"], &phone), (0, "verity is enabled on slot with suffix _a.\n".into(), String::new()));
+        let phone = Phone {
+            by_name: dir.path(),
+            suffix: "_a",
+            locked: false,
+        };
+        assert_eq!(
+            ran(&["get-verity"], &phone),
+            (
+                0,
+                "verity is enabled on slot with suffix _a.\n".into(),
+                String::new()
+            )
+        );
         assert_eq!(
             ran(&["--force", "disable-verity"], &phone),
             (0, "Successfully disabled verity on slot with suffix _a. Reboot the device for changes to take effect.\n".into(), String::new())
         );
-        assert_eq!(fs::read(&a).unwrap(), vbmeta(1), "the verity flag set and nothing else");
-        assert_eq!(ran(&["disable-verity"], &phone), (0, "verity is already disabled on slot with suffix _a.\n".into(), String::new()));
-        assert_eq!(ran(&["disable-verification", "--force"], &phone).0, 0, "the command and --force in either order");
+        assert_eq!(
+            fs::read(&a).unwrap(),
+            vbmeta(1),
+            "the verity flag set and nothing else"
+        );
+        assert_eq!(
+            ran(&["disable-verity"], &phone),
+            (
+                0,
+                "verity is already disabled on slot with suffix _a.\n".into(),
+                String::new()
+            )
+        );
+        assert_eq!(
+            ran(&["disable-verification", "--force"], &phone).0,
+            0,
+            "the command and --force in either order"
+        );
         assert_eq!(fs::read(&a).unwrap(), vbmeta(3));
-        assert_eq!(ran(&["get-verification"], &phone).1, "verification is disabled on slot with suffix _a.\n");
-        assert_eq!(ran(&["get-verity"], &phone).1, "verity is disabled on slot with suffix _a.\n");
+        assert_eq!(
+            ran(&["get-verification"], &phone).1,
+            "verification is disabled on slot with suffix _a.\n"
+        );
+        assert_eq!(
+            ran(&["get-verity"], &phone).1,
+            "verity is disabled on slot with suffix _a.\n"
+        );
         assert_eq!(
             ran(&["enable-verity"], &phone).1,
             "Successfully enabled verity on slot with suffix _a. Reboot the device for changes to take effect.\n"
@@ -267,16 +365,30 @@ mod tests {
         assert_eq!(fs::read(&a).unwrap(), vbmeta(2));
         assert_eq!(ran(&["enable-verification"], &phone).0, 0);
         assert_eq!(fs::read(&a).unwrap(), vbmeta(0));
-        assert_eq!(fs::read(&b).unwrap(), vbmeta(0), "the other slot's as it was");
+        assert_eq!(
+            fs::read(&b).unwrap(),
+            vbmeta(0),
+            "the other slot's as it was"
+        );
     }
 
     #[test]
     fn a_phone_with_one_slot_names_none() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("vbmeta"), vbmeta(2)).unwrap();
-        let phone = Phone { by_name: dir.path(), suffix: "", locked: false };
-        assert_eq!(ran(&["get-verification"], &phone).1, "verification is disabled.\n");
-        assert_eq!(ran(&["enable-verification"], &phone).1, "Successfully enabled verification. Reboot the device for changes to take effect.\n");
+        let phone = Phone {
+            by_name: dir.path(),
+            suffix: "",
+            locked: false,
+        };
+        assert_eq!(
+            ran(&["get-verification"], &phone).1,
+            "verification is disabled.\n"
+        );
+        assert_eq!(
+            ran(&["enable-verification"], &phone).1,
+            "Successfully enabled verification. Reboot the device for changes to take effect.\n"
+        );
         assert_eq!(fs::read(dir.path().join("vbmeta")).unwrap(), vbmeta(0));
     }
 
@@ -285,11 +397,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("vbmeta_a");
         fs::write(&a, vbmeta(2)).unwrap();
-        let phone = Phone { by_name: dir.path(), suffix: "_a", locked: true };
-        assert_eq!(ran(&["disable-verity"], &phone), (77, String::new(), LOCKED.into()));
+        let phone = Phone {
+            by_name: dir.path(),
+            suffix: "_a",
+            locked: true,
+        };
+        assert_eq!(
+            ran(&["disable-verity"], &phone),
+            (77, String::new(), LOCKED.into())
+        );
         assert_eq!(fs::read(&a).unwrap(), vbmeta(2), "nothing written");
         assert_eq!(ran(&["get-verity"], &phone).0, 0, "telling needs no force");
-        assert_eq!(ran(&["disable-verification"], &phone).1, "verification is already disabled on slot with suffix _a.\n");
+        assert_eq!(
+            ran(&["disable-verification"], &phone).1,
+            "verification is already disabled on slot with suffix _a.\n"
+        );
         assert_eq!(ran(&["--force", "disable-verity"], &phone).0, 0);
         assert_eq!(fs::read(&a).unwrap(), vbmeta(3));
     }
@@ -315,8 +437,15 @@ mod tests {
             boot
         };
         fs::write(&boot, partition(0)).unwrap();
-        let phone = Phone { by_name: dir.path(), suffix: "_b", locked: false };
-        assert_eq!(ran(&["get-verity"], &phone).1, "verity is enabled on slot with suffix _b.\n");
+        let phone = Phone {
+            by_name: dir.path(),
+            suffix: "_b",
+            locked: false,
+        };
+        assert_eq!(
+            ran(&["get-verity"], &phone).1,
+            "verity is enabled on slot with suffix _b.\n"
+        );
         assert_eq!(ran(&["disable-verity"], &phone).0, 0);
         assert_eq!(fs::read(&boot).unwrap(), partition(1));
     }
@@ -324,12 +453,23 @@ mod tests {
     #[test]
     fn what_holds_no_vbmeta_image_fails_and_stays_as_it_was() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone { by_name: dir.path(), suffix: "_a", locked: false };
+        let phone = Phone {
+            by_name: dir.path(),
+            suffix: "_a",
+            locked: false,
+        };
         let (code, output, errors) = ran(&["get-verity"], &phone);
         assert_eq!((code, output.as_str()), (70, ""), "no partition to look in");
-        assert!(errors.ends_with("Error getting whether verity is enabled.\n"), "{errors}");
+        assert!(
+            errors.ends_with("Error getting whether verity is enabled.\n"),
+            "{errors}"
+        );
         fs::write(dir.path().join("boot_a"), vec![0u8; 8192]).unwrap();
-        assert_eq!(ran(&["disable-verity"], &phone).0, 70, "a boot partition without a footer");
+        assert_eq!(
+            ran(&["disable-verity"], &phone).0,
+            70,
+            "a boot partition without a footer"
+        );
         let a = dir.path().join("vbmeta_a");
         let other = b"ANDROID!".repeat(64);
         fs::write(&a, &other).unwrap();
@@ -342,9 +482,17 @@ mod tests {
     #[test]
     fn without_a_command_it_tells_how_it_is_used() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone { by_name: dir.path(), suffix: "_a", locked: false };
+        let phone = Phone {
+            by_name: dir.path(),
+            suffix: "_a",
+            locked: false,
+        };
         for args in [&[][..], &["--force"], &["disable-dm-verity"]] {
-            assert_eq!(ran(args, &phone), (64, String::new(), USAGE.into()), "{args:?}");
+            assert_eq!(
+                ran(args, &phone),
+                (64, String::new(), USAGE.into()),
+                "{args:?}"
+            );
         }
     }
 }

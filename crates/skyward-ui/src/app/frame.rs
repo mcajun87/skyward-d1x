@@ -133,7 +133,11 @@ impl Fold {
     /// as is left of it folding; none once it has folded away.
     pub fn shown(&self, offset: f32) -> Option<Rect> {
         let h = self.bar.h - offset.max(0.0);
-        (h > 0.0).then(|| Rect { y: self.bar.y - offset.min(0.0), h, ..self.bar })
+        (h > 0.0).then(|| Rect {
+            y: self.bar.y - offset.min(0.0),
+            h,
+            ..self.bar
+        })
     }
 
     /// How strongly the bar, and its icon and words, show with the page
@@ -153,7 +157,12 @@ impl Fold {
         widgets::search_bar(out, t, r, bar);
         // The icon and words stay centred in what is left of the bar.
         let sink = r.y + r.h / 2.0 - (self.bar.y + self.bar.h / 2.0);
-        out.lay(words, self.bar.x.floor() as i32, (self.bar.y.floor() + sink).round() as i32, level);
+        out.lay(
+            words,
+            self.bar.x.floor() as i32,
+            (self.bar.y.floor() + sink).round() as i32,
+            level,
+        );
     }
 
     /// How far the large title has gone up with the page `offset` pixels
@@ -192,7 +201,13 @@ pub struct HeroArt {
 impl Frame {
     /// A page of cards on the grey page colour that opens with its title in
     /// large type and goes back with `<`.
-    pub fn new(t: &Theme, canvas: Canvas, hits: Vec<Hit>, title: &'static str, content_top: f32) -> Frame {
+    pub fn new(
+        t: &Theme,
+        canvas: Canvas,
+        hits: Vec<Hit>,
+        title: &'static str,
+        content_top: f32,
+    ) -> Frame {
         Frame {
             canvas,
             hits,
@@ -219,7 +234,10 @@ impl Frame {
     pub fn shown(&self, r: Rect, offset: f32) -> Option<Rect> {
         match &self.fold {
             Some(fold) if fold.bar == r => fold.shown(offset),
-            _ => Some(Rect { y: r.y - offset, ..r }),
+            _ => Some(Rect {
+                y: r.y - offset,
+                ..r
+            }),
         }
     }
 
@@ -242,14 +260,20 @@ impl Frame {
         let rows = self.rows.as_ref()?;
         let action = rows.action?;
         let i = rows.at(y)?;
-        Some(Hit { rect: rows.rect(i, self.canvas.w as f32), action: action(i) })
+        Some(Hit {
+            rect: rows.rect(i, self.canvas.w as f32),
+            action: action(i),
+        })
     }
 
     /// How tall the page is: its canvas, or its rows and the margin after
     /// them if they reach further.
     pub fn height(&self, t: &Theme) -> f32 {
         let h = self.canvas.h as f32;
-        let h = self.rows.as_ref().map_or(h, |r| h.max((r.bottom() + t.m.margin * 2.0).ceil()));
+        let h = self
+            .rows
+            .as_ref()
+            .map_or(h, |r| h.max((r.bottom() + t.m.margin * 2.0).ceil()));
         h + self.dock.as_ref().map_or(0.0, |d| d.canvas.h as f32)
     }
 }
@@ -260,17 +284,30 @@ mod tests {
 
     #[test]
     fn a_search_bar_pulled_down_past_the_top_comes_down_whole_with_its_title() {
-        let fold = Fold { bar: Rect::new(36.0, 503.0, 1128.0, 131.0), hint: "", span: 169.0 };
-        assert_eq!(fold.shown(-30.0), Some(Rect::new(36.0, 533.0, 1128.0, 131.0)));
+        let fold = Fold {
+            bar: Rect::new(36.0, 503.0, 1128.0, 131.0),
+            hint: "",
+            span: 169.0,
+        };
+        assert_eq!(
+            fold.shown(-30.0),
+            Some(Rect::new(36.0, 533.0, 1128.0, 131.0))
+        );
         assert_eq!(fold.lift(-30.0), -30.0);
-        assert_eq!(fold.shown(31.0), Some(Rect::new(36.0, 503.0, 1128.0, 100.0)));
+        assert_eq!(
+            fold.shown(31.0),
+            Some(Rect::new(36.0, 503.0, 1128.0, 100.0))
+        );
         assert_eq!(fold.shown(131.0), None);
         assert_eq!((fold.lift(150.0), fold.lift(200.0)), (0.0, 31.0));
     }
 
     #[test]
     fn rows_are_found_by_where_they_lie() {
-        let rows = Rows { edges: vec![100.0, 352.0, 682.0, 934.0], action: Some(Action::OpenEntry) };
+        let rows = Rows {
+            edges: vec![100.0, 352.0, 682.0, 934.0],
+            action: Some(Action::OpenEntry),
+        };
         assert_eq!(rows.count(), 3);
         assert_eq!(rows.at(99.0), None);
         assert_eq!(rows.at(100.0), Some(0));

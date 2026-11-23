@@ -1,0 +1,121 @@
+# Samsung Galaxy Note10 5G (d1x / SM-N971N) — skyward 设备配置
+#
+# 依据 OrangeFox-R12.0-d1x-修改教程-v11 的实机参数。stock recovery（crDroid A17）
+# 自带的 recovery.fstab 已经包含 /metadata -> by-name/omr、/boot、/recovery、
+# /vbmeta、/cache、/mnt/vendor/efs、/data(f2fs+ext4)、/misc，所以这里只补它缺的三条。
+
+[device]
+codename = "d1x"
+brand = "Samsung"
+model = "Galaxy Note10 5G"
+# d1x 是 A-only，没有 slot
+ab = false
+soc = { hans = "Exynos 9825", hant = "Exynos 9825", en = "Exynos 9825" }
+
+[display]
+width = 1080
+height = 2280
+density = 420
+diagonal = 6.7
+corner_radius = 60
+
+# 原机电芯是 3500mAh，这台换成了 5000mAh / 3.85V 电芯，电量计仍按
+# 3500mAh 标定。容量按实际电芯显示；健康百分比不拿旧标定硬算。
+[battery]
+capacity_mah = 5000
+
+# d1x 的 ko 在 /vendor/lib/modules；recovery 起来后要挂 /vendor 才能读到
+[modules]
+sources = ["vendor"]
+load = []
+
+[haptics]
+# Note10 5G 的振动器在三星 timed_output 节点上，不走 evdev FF；按 OrangeFox/TWRP
+# 的 /sys/class/timed_output/vibrator/enable 方式驱动。强度滑条映射为 20..80ms。
+timed_output = "/sys/class/timed_output/vibrator/enable"
+# The d1x packer shipped with 0.5.5 predates timed_output. It needs the
+# older `timed`/`drive` spelling to accept this configuration; the runtime
+# reads timed_output and ignores these two.
+timed = "/sys/class/timed_output/vibrator"
+drive = 40
+strength = { lightest = 0.2, strongest = 1.0 }
+
+[partitions]
+mounted = ["vendor", "efs"]
+
+# stock fstab 没有这三条；补进去后备份页才看得到 dtb/dtbo/param
+[[fstab]]
+device = "/dev/block/platform/13d60000.ufs/by-name/dtb"
+mount_point = "/dtb"
+filesystem = "emmc"
+options = "defaults"
+extras = "defaults"
+
+[[fstab]]
+device = "/dev/block/platform/13d60000.ufs/by-name/dtbo"
+mount_point = "/dtbo"
+filesystem = "emmc"
+options = "defaults"
+extras = "defaults"
+
+[[fstab]]
+device = "/dev/block/platform/13d60000.ufs/by-name/param"
+mount_point = "/param"
+filesystem = "emmc"
+options = "defaults"
+extras = "defaults"
+
+# OrangeFox 在挂载页列出的三星专属分区；它们的 by-name 节点和 ext4
+# 格式都已确认，补进表里后分区管理页才能看到。
+[[fstab]]
+device = "/dev/block/platform/13d60000.ufs/by-name/keydata"
+mount_point = "/keydata"
+filesystem = "ext4"
+options = "noatime,nosuid,nodev"
+extras = "wait,check"
+
+[[fstab]]
+device = "/dev/block/platform/13d60000.ufs/by-name/keyrefuge"
+mount_point = "/keyrefuge"
+filesystem = "ext4"
+options = "noatime,nosuid,nodev"
+extras = "wait,check"
+
+[[fstab]]
+device = "/dev/block/platform/13d60000.ufs/by-name/sec_efs"
+mount_point = "/sec_efs"
+filesystem = "ext4"
+options = "noatime,nosuid,nodev"
+extras = "wait,check"
+
+# EFS 存基带 IMEI/校准，必须能备份
+[backup]
+efs = ["efs"]
+metadata = ["omr"]
+partitions = ["boot", "recovery", "dtb", "dtbo", "vbmeta", "param"]
+
+[wipe]
+formats = ["data", "cache", "metadata", "system", "vendor"]
+
+# d1x 的 dhd 是内核内置驱动，固件不是模块；内核从 /etc/wifi 取固件。
+[wlan]
+auto_on = true
+modules = []
+firmware_dir = "/etc/wifi"
+interface = "wlan0"
+supplicant = "/system/bin/wpa_supplicant"
+libraries = ["/vendor/lib64", "/system/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+[[wlan.firmware]]
+name = "bcmdhd_sta.bin"
+path = "/vendor/firmware/bcmdhd_sta.bin_b1"
+
+[[wlan.firmware]]
+name = "bcmdhd_clm.blob"
+path = "/vendor/firmware/bcmdhd_clm.blob"
+
+[[wlan.firmware]]
+name = "nvram_net.txt"
+path = "/vendor/firmware/nvram.txt_CS01_semco_b1"

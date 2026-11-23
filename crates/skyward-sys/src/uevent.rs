@@ -20,7 +20,11 @@ pub struct Listener {
 impl Listener {
     pub fn open() -> Result<Listener> {
         let fd = unsafe {
-            libc::socket(libc::AF_NETLINK, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, libc::NETLINK_KOBJECT_UEVENT)
+            libc::socket(
+                libc::AF_NETLINK,
+                libc::SOCK_DGRAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+                libc::NETLINK_KOBJECT_UEVENT,
+            )
         };
         if fd < 0 {
             return Err(io::Error::last_os_error()).context("open the uevent socket");
@@ -49,7 +53,14 @@ impl Listener {
         let mut buf = [0u8; 8192];
         let mut any = false;
         loop {
-            let n = unsafe { libc::recv(self.socket.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len(), 0) };
+            let n = unsafe {
+                libc::recv(
+                    self.socket.as_raw_fd(),
+                    buf.as_mut_ptr().cast(),
+                    buf.len(),
+                    0,
+                )
+            };
             if n >= 0 {
                 any = true;
                 continue;

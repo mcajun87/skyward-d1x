@@ -89,7 +89,12 @@ pub struct System {
 impl System {
     /// What Skyward's program reads of the system, to start it.
     pub fn start(&self) -> Start {
-        Start { id: self.id.clone(), filesystem: self.filesystem.clone(), init: self.init.clone(), root: self.root.clone() }
+        Start {
+            id: self.id.clone(),
+            filesystem: self.filesystem.clone(),
+            init: self.init.clone(),
+            root: self.root.clone(),
+        }
     }
 }
 
@@ -141,11 +146,22 @@ impl State {
         fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
         let text = toml::to_string(self).context("write the systems' state")?;
         let tmp = path.with_extension("toml.new");
-        let mut f = OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp).with_context(|| format!("open {}", tmp.display()))?;
-        f.write_all(text.as_bytes()).with_context(|| format!("write {}", tmp.display()))?;
-        f.sync_all().with_context(|| format!("sync {}", tmp.display()))?;
-        fs::rename(&tmp, path).with_context(|| format!("put {} in place of {}", tmp.display(), path.display()))?;
-        File::open(dir).and_then(|d| d.sync_all()).with_context(|| format!("sync {}", dir.display()))
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&tmp)
+            .with_context(|| format!("open {}", tmp.display()))?;
+        f.write_all(text.as_bytes())
+            .with_context(|| format!("write {}", tmp.display()))?;
+        f.sync_all()
+            .with_context(|| format!("sync {}", tmp.display()))?;
+        fs::rename(&tmp, path)
+            .with_context(|| format!("put {} in place of {}", tmp.display(), path.display()))?;
+        File::open(dir)
+            .and_then(|d| d.sync_all())
+            .with_context(|| format!("sync {}", dir.display()))
     }
 
     /// Which system's boot set the boot partitions of `slot` hold.
@@ -162,17 +178,35 @@ pub(crate) mod tests {
     use super::*;
 
     pub fn area(file: &str, size: u64) -> Area {
-        Area { partition: "userdata".into(), file: file.into(), id: "00112233445566778899aabbccddeeff".into(), size, extents: vec![(1 << 20, size)] }
+        Area {
+            partition: "userdata".into(),
+            file: file.into(),
+            id: "00112233445566778899aabbccddeeff".into(),
+            size,
+            extents: vec![(1 << 20, size)],
+        }
     }
 
     #[test]
     fn the_state_is_kept_whole_and_read_back_as_it_was() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("skyward/systems.toml");
-        assert_eq!(State::load(&path).unwrap(), State::default(), "nothing kept, nothing installed");
+        assert_eq!(
+            State::load(&path).unwrap(),
+            State::default(),
+            "nothing kept, nothing installed"
+        );
         let state = State {
-            store: Some(Store { area: area("/data/skyward/systems/store", 4096 + 3 * 8192), boot: 4096, init_boot: 4096 }),
-            saved: Some(Saved { entry: 1, boot: "aa".into(), init_boot: "bb".into() }),
+            store: Some(Store {
+                area: area("/data/skyward/systems/store", 4096 + 3 * 8192),
+                boot: 4096,
+                init_boot: 4096,
+            }),
+            saved: Some(Saved {
+                entry: 1,
+                boot: "aa".into(),
+                init_boot: "bb".into(),
+            }),
             system: Some(System {
                 id: "test".into(),
                 name: "Test".into(),
@@ -180,25 +214,45 @@ pub(crate) mod tests {
                 filesystem: "ext4".into(),
                 init: "/sbin/init".into(),
                 root: area("/data/skyward/systems/test", 1 << 20),
-                set: Saved { entry: 2, boot: "cc".into(), init_boot: "dd".into() },
+                set: Saved {
+                    entry: 2,
+                    boot: "cc".into(),
+                    init_boot: "dd".into(),
+                },
                 own_ramdisk: Some(4096),
                 vendor_boot: "ee".into(),
                 dtbo: "ff".into(),
             }),
             occupied: Some("_a".into()),
-            written: Some(Written { boot: "cc".into(), init_boot: "11".into() }),
-            switching: Some(Switching { to: Who::Installed, slot: "_a".into(), saved: false }),
+            written: Some(Written {
+                boot: "cc".into(),
+                init_boot: "11".into(),
+            }),
+            switching: Some(Switching {
+                to: Who::Installed,
+                slot: "_a".into(),
+                saved: false,
+            }),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);
         // A state an earlier Skyward kept says nothing of what was written,
         // and reads as one that has none.
-        let earlier = State { written: None, ..state.clone() };
+        let earlier = State {
+            written: None,
+            ..state.clone()
+        };
         earlier.save(&path).unwrap();
         assert!(!fs::read_to_string(&path).unwrap().contains("written"));
         assert_eq!(State::load(&path).unwrap(), earlier);
-        assert!(!path.with_extension("toml.new").exists(), "nothing left beside it");
-        assert_eq!((state.occupant("_a"), state.occupant("_b")), (Who::Other, Who::Installed));
+        assert!(
+            !path.with_extension("toml.new").exists(),
+            "nothing left beside it"
+        );
+        assert_eq!(
+            (state.occupant("_a"), state.occupant("_b")),
+            (Who::Other, Who::Installed)
+        );
         assert_eq!(Who::named("installed", &state), Some(Who::Installed));
         assert_eq!(Who::named("test", &state), Some(Who::Other));
         assert_eq!(Who::named("other", &state), None);

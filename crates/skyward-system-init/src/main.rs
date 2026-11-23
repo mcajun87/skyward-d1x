@@ -38,7 +38,10 @@ const REASON_MAX: usize = 600;
 
 /// `why` as a request's reason: on one line, and short enough to fit.
 fn reason(why: &str) -> String {
-    let line: String = why.chars().map(|c| if c == '\n' { ' ' } else { c }).collect();
+    let line: String = why
+        .chars()
+        .map(|c| if c == '\n' { ' ' } else { c })
+        .collect();
     let mut end = line.len().min(REASON_MAX);
     while !line.is_char_boundary(end) {
         end -= 1;
@@ -62,16 +65,32 @@ fn loading(text: &str) -> Vec<String> {
 fn stalled(during: &str, secs: u64, loading: &[String]) -> String {
     match loading {
         [] => format!("the start stopped while {during}, and was given up after {secs} s"),
-        names => format!("the start stopped while {during}, with {} still loading, and was given up after {secs} s", names.join(", ")),
+        names => format!(
+            "the start stopped while {during}, with {} still loading, and was given up after {secs} s",
+            names.join(", ")
+        ),
     }
 }
 
 /// The device a uevent file describes: its name, the partition name it
 /// carries, and its (major, minor).
 fn uevent(text: &str) -> Result<(String, Option<String>, (u32, u32))> {
-    let field = |key: &str| text.lines().find_map(|l| l.strip_prefix(key)).map(str::to_string);
-    let number = |key: &str| -> Result<u32> { field(key).with_context(|| format!("no {key}"))?.parse().with_context(|| format!("{key} is no number")) };
-    Ok((field("DEVNAME=").context("no DEVNAME=")?, field("PARTNAME="), (number("MAJOR=")?, number("MINOR=")?)))
+    let field = |key: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(key))
+            .map(str::to_string)
+    };
+    let number = |key: &str| -> Result<u32> {
+        field(key)
+            .with_context(|| format!("no {key}"))?
+            .parse()
+            .with_context(|| format!("{key} is no number"))
+    };
+    Ok((
+        field("DEVNAME=").context("no DEVNAME=")?,
+        field("PARTNAME="),
+        (number("MAJOR=")?, number("MINOR=")?),
+    ))
 }
 
 /// The program as the C library starts it, with none of Rust's own start
@@ -87,7 +106,10 @@ unsafe extern "C" fn main(argc: libc::c_int, argv: *const *const libc::c_char) -
         // The C library hands over the arguments it was started with.
         _ => unsafe { std::ffi::CStr::from_ptr(*argv) }.to_bytes(),
     };
-    match std::path::Path::new(std::ffi::OsStr::from_bytes(started_as)).file_name().and_then(|n| n.to_str()) {
+    match std::path::Path::new(std::ffi::OsStr::from_bytes(started_as))
+        .file_name()
+        .and_then(|n| n.to_str())
+    {
         Some("map") => sys::map(),
         _ => sys::init(),
     }
@@ -102,12 +124,12 @@ fn main() {
 #[cfg(target_os = "android")]
 mod sys {
     use super::{loading, reason, stalled, uevent};
-    use anyhow::{bail, ensure, Context, Result};
+    use anyhow::{Context, Result, bail, ensure};
     use skyward_block::area::HEADER;
-    use skyward_block::{dm, BY_NAME};
+    use skyward_block::{BY_NAME, dm};
     use skyward_bootimg::{BootImage, Ramdisk};
     use skyward_sys::bcb::{self, Bcb};
-    use skyward_systems::boot::{Start, INIT, START};
+    use skyward_systems::boot::{INIT, START, Start};
     use std::ffi::CString;
     use std::fs::{self, File, OpenOptions};
     use std::io::Write;
@@ -167,7 +189,13 @@ mod sys {
         Ok(())
     }
 
-    fn mount(source: &str, target: &str, kind: Option<&str>, flags: libc::c_ulong, data: Option<&str>) -> Result<()> {
+    fn mount(
+        source: &str,
+        target: &str,
+        kind: Option<&str>,
+        flags: libc::c_ulong,
+        data: Option<&str>,
+    ) -> Result<()> {
         let kind = kind.map(c);
         let data = data.map(c);
         let rc = unsafe {
@@ -176,7 +204,8 @@ mod sys {
                 c(target).as_ptr(),
                 kind.as_ref().map_or(std::ptr::null(), |k| k.as_ptr()),
                 flags,
-                data.as_ref().map_or(std::ptr::null(), |d| d.as_ptr() as *const libc::c_void),
+                data.as_ref()
+                    .map_or(std::ptr::null(), |d| d.as_ptr() as *const libc::c_void),
             )
         };
         check(rc, || format!("mount {source} on {target}"))
@@ -215,7 +244,13 @@ mod sys {
         let Some(dev) = DEV.get() else {
             return;
         };
-        let fd = unsafe { libc::openat(dev.as_raw_fd(), c"kmsg".as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC) };
+        let fd = unsafe {
+            libc::openat(
+                dev.as_raw_fd(),
+                c"kmsg".as_ptr(),
+                libc::O_WRONLY | libc::O_CLOEXEC,
+            )
+        };
         if fd < 0 {
             return;
         }
@@ -230,19 +265,28 @@ mod sys {
         for dir in ["/proc", "/sys", "/dev", NEW_ROOT] {
             if !Path::new(dir).exists() {
                 fs::create_dir(dir).with_context(|| format!("make {dir}"))?;
-                MADE.lock().expect("nothing panics while it holds the folders made").push(dir);
+                MADE.lock()
+                    .expect("nothing panics while it holds the folders made")
+                    .push(dir);
             }
         }
         mount("proc", "/proc", Some("proc"), 0, None)?;
         mount("sysfs", "/sys", Some("sysfs"), 0, None)?;
-        mount("tmpfs", "/dev", Some("tmpfs"), libc::MS_NOSUID, Some("mode=0755"))?;
+        mount(
+            "tmpfs",
+            "/dev",
+            Some("tmpfs"),
+            libc::MS_NOSUID,
+            Some("mode=0755"),
+        )?;
         fs::create_dir_all(BY_NAME).with_context(|| format!("make {BY_NAME}"))?;
         node("/dev/console", libc::S_IFCHR, 0o600, (5, 1))?;
         node("/dev/null", libc::S_IFCHR, 0o666, (1, 3))?;
         node("/dev/kmsg", libc::S_IFCHR, 0o644, (1, 11))?;
         // After the streams, so that it takes none of their places.
         streams()?;
-        DEV.set(File::open("/dev").context("open /dev")?).expect("the start mounts /dev once");
+        DEV.set(File::open("/dev").context("open /dev")?)
+            .expect("the start mounts /dev once");
         Ok(())
     }
 
@@ -253,11 +297,21 @@ mod sys {
     /// them.
     fn streams() -> Result<()> {
         use std::os::unix::io::IntoRawFd;
-        let null = OpenOptions::new().read(true).write(true).open("/dev/null").context("open /dev/null")?.into_raw_fd();
-        let kmsg = OpenOptions::new().write(true).open("/dev/kmsg").context("open /dev/kmsg")?.into_raw_fd();
+        let null = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/null")
+            .context("open /dev/null")?
+            .into_raw_fd();
+        let kmsg = OpenOptions::new()
+            .write(true)
+            .open("/dev/kmsg")
+            .context("open /dev/kmsg")?
+            .into_raw_fd();
         for (fd, to) in [(null, 0), (kmsg, 1), (kmsg, 2)] {
             if fd != to && unsafe { libc::dup2(fd, to) } == -1 {
-                return Err(std::io::Error::last_os_error()).with_context(|| format!("make fd {to} a standard stream"));
+                return Err(std::io::Error::last_os_error())
+                    .with_context(|| format!("make fd {to} a standard stream"));
             }
         }
         for fd in [null, kmsg] {
@@ -279,8 +333,13 @@ mod sys {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(e).context("read /proc/bootconfig"),
         };
-        let loaded = skyward_modules::modprobe::first_stage(&cmdline, &bootconfig, skip).context("load the drivers")?;
-        log(&format!("{} modules loaded from {}", loaded.count, loaded.dir.display()));
+        let loaded = skyward_modules::modprobe::first_stage(&cmdline, &bootconfig, skip)
+            .context("load the drivers")?;
+        log(&format!(
+            "{} modules loaded from {}",
+            loaded.count,
+            loaded.dir.display()
+        ));
         let Some((_, first)) = loaded.failed.first() else {
             return Ok(());
         };
@@ -288,14 +347,27 @@ mod sys {
             log(&format!("{e:#}"));
         }
         let names: Vec<&str> = loaded.failed.iter().map(|(n, _)| n.as_str()).collect();
-        bail!("{} drivers were not loaded ({}): {first:#}", names.len(), names.join(", "))
+        bail!(
+            "{} drivers were not loaded ({}): {first:#}",
+            names.len(),
+            names.join(", ")
+        )
     }
 
     /// The device-mapper's control node.
     fn device_mapper() -> Result<()> {
-        let text = fs::read_to_string("/sys/class/misc/device-mapper/dev").context("read the device-mapper's numbers")?;
-        let (major, minor) = text.trim().split_once(':').context("the device-mapper's numbers")?;
-        node(DEVICE_MAPPER, libc::S_IFCHR, 0o600, (major.parse()?, minor.parse()?))
+        let text = fs::read_to_string("/sys/class/misc/device-mapper/dev")
+            .context("read the device-mapper's numbers")?;
+        let (major, minor) = text
+            .trim()
+            .split_once(':')
+            .context("the device-mapper's numbers")?;
+        node(
+            DEVICE_MAPPER,
+            libc::S_IFCHR,
+            0o600,
+            (major.parse()?, minor.parse()?),
+        )
     }
 
     /// Wait up to `within` for the partition named `name` to show, and make
@@ -305,7 +377,10 @@ mod sys {
         loop {
             for entry in fs::read_dir("/sys/class/block").context("read /sys/class/block")? {
                 let path = entry?.path().join("uevent");
-                let (_, partname, dev) = uevent(&fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?)?;
+                let (_, partname, dev) = uevent(
+                    &fs::read_to_string(&path)
+                        .with_context(|| format!("read {}", path.display()))?,
+                )?;
                 if partname.as_deref() == Some(name) {
                     node(at, libc::S_IFBLK, 0o600, dev)?;
                     return Ok(dev);
@@ -333,9 +408,12 @@ mod sys {
         device_mapper()?;
         let f = File::open(&at).with_context(|| format!("open {at}"))?;
         let mut header = vec![0u8; HEADER as usize];
-        f.read_exact_at(&mut header, start.root.extents[0].0).with_context(|| format!("read {at}"))?;
+        f.read_exact_at(&mut header, start.root.extents[0].0)
+            .with_context(|| format!("read {at}"))?;
         start.root.check(&header)?;
-        let targets = start.root.targets(HEADER, start.root.size - HEADER, device)?;
+        let targets = start
+            .root
+            .targets(HEADER, start.root.size - HEADER, device)?;
         let dev = dm::activate(ROOT_DEVICE, &targets, false)?;
         node(ROOT_NODE, libc::S_IFBLK, 0o600, dev)?;
         Ok(ROOT_NODE)
@@ -343,7 +421,9 @@ mod sys {
 
     fn read_start() -> Result<Start> {
         let path = Path::new("/").join(START);
-        Start::parse(&fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?)
+        Start::parse(
+            &fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?,
+        )
     }
 
     /// Whether `program` is there to start once the root mounted at
@@ -353,16 +433,22 @@ mod sys {
     fn startable(program: &str) -> Result<bool> {
         let (root, path) = (c(NEW_ROOT), c(program));
         match unsafe { libc::fork() } {
-            -1 => Err(std::io::Error::last_os_error()).context("start a child to look into the root"),
+            -1 => {
+                Err(std::io::Error::last_os_error()).context("start a child to look into the root")
+            }
             0 => unsafe {
                 let mut found: libc::stat = std::mem::zeroed();
-                let runs = libc::chroot(root.as_ptr()) == 0 && libc::stat(path.as_ptr(), &mut found) == 0 && found.st_mode & libc::S_IFMT == libc::S_IFREG && found.st_mode & 0o111 != 0;
+                let runs = libc::chroot(root.as_ptr()) == 0
+                    && libc::stat(path.as_ptr(), &mut found) == 0
+                    && found.st_mode & libc::S_IFMT == libc::S_IFREG
+                    && found.st_mode & 0o111 != 0;
                 libc::_exit(if runs { 0 } else { 1 })
             },
             child => {
                 let mut status = 0;
                 if unsafe { libc::waitpid(child, &mut status, 0) } != child {
-                    return Err(std::io::Error::last_os_error()).context("wait for the child that looks into the root");
+                    return Err(std::io::Error::last_os_error())
+                        .context("wait for the child that looks into the root");
                 }
                 Ok(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0)
             }
@@ -386,19 +472,34 @@ mod sys {
             if Path::new(&to).is_dir() {
                 mount(dir, &to, None, libc::MS_MOVE, None)?;
             } else {
-                check(unsafe { libc::umount2(c(dir).as_ptr(), libc::MNT_DETACH) }, || format!("unmount {dir}"))?;
+                check(
+                    unsafe { libc::umount2(c(dir).as_ptr(), libc::MNT_DETACH) },
+                    || format!("unmount {dir}"),
+                )?;
             }
         }
-        check(unsafe { libc::chdir(c(NEW_ROOT).as_ptr()) }, || format!("go into {NEW_ROOT}"))?;
+        check(unsafe { libc::chdir(c(NEW_ROOT).as_ptr()) }, || {
+            format!("go into {NEW_ROOT}")
+        })?;
         mount(".", "/", None, libc::MS_MOVE, None)?;
-        check(unsafe { libc::chroot(c(".").as_ptr()) }, || "make the new root the root".into())?;
-        check(unsafe { libc::chdir(c("/").as_ptr()) }, || "go to the new root".into())?;
+        check(unsafe { libc::chroot(c(".").as_ptr()) }, || {
+            "make the new root the root".into()
+        })?;
+        check(unsafe { libc::chdir(c("/").as_ptr()) }, || {
+            "go to the new root".into()
+        })?;
         exec(init)
     }
 
     /// The request for the recovery, saying `why` the start stopped.
     fn request(why: &str) -> Bcb {
-        Bcb { command: "boot-recovery".into(), args: vec!["--system_stopped".into(), format!("--reason={}", reason(why))] }
+        Bcb {
+            command: "boot-recovery".into(),
+            args: vec![
+                "--system_stopped".into(),
+                format!("--reason={}", reason(why)),
+            ],
+        }
     }
 
     /// Leave the request for the recovery in misc, saying why the start
@@ -414,13 +515,16 @@ mod sys {
             return;
         }
         if let Err(e) = bcb::write(Path::new(MISC_NODE), &request(why)) {
-            log(&format!("why the start stopped was not written to misc: {e:#}"));
+            log(&format!(
+                "why the start stopped was not written to misc: {e:#}"
+            ));
         }
     }
 
     /// Whether misc asks the bootloader for the recovery.
     fn misc_asks() -> bool {
-        Path::new(MISC_NODE).exists() && bcb::read(Path::new(MISC_NODE)).is_ok_and(|held| held.asks_for_recovery())
+        Path::new(MISC_NODE).exists()
+            && bcb::read(Path::new(MISC_NODE)).is_ok_and(|held| held.asks_for_recovery())
     }
 
     /// Take down what the start set up, for the recovery's own first
@@ -436,7 +540,11 @@ mod sys {
         for dir in ["/dev", "/sys", "/proc"] {
             unmount(dir, libc::MNT_DETACH)?;
         }
-        for dir in MADE.lock().expect("nothing panics while it holds the folders made").drain(..) {
+        for dir in MADE
+            .lock()
+            .expect("nothing panics while it holds the folders made")
+            .drain(..)
+        {
             fs::remove_dir(dir).with_context(|| format!("take away {dir}"))?;
         }
         let start = Path::new("/").join(START);
@@ -449,14 +557,23 @@ mod sys {
     /// when the bootloader starts the recovery, and its own first program
     /// started, once what the start set up is taken down.
     fn recovery() -> Result<!> {
-        let name = format!("recovery{}", skyward_block::slot_suffix()?.unwrap_or_default());
+        let name = format!(
+            "recovery{}",
+            skyward_block::slot_suffix()?.unwrap_or_default()
+        );
         by_name(&name)?;
         let at = format!("{BY_NAME}/{name}");
-        let image = BootImage::parse(&fs::read(&at).with_context(|| format!("read {at}"))?).with_context(|| format!("read the image in {at}"))?;
-        let ramdisk = Ramdisk::decode(&image.ramdisk).with_context(|| format!("read the ramdisk in {at}"))?;
+        let image = BootImage::parse(&fs::read(&at).with_context(|| format!("read {at}"))?)
+            .with_context(|| format!("read the image in {at}"))?;
+        let ramdisk =
+            Ramdisk::decode(&image.ramdisk).with_context(|| format!("read the ramdisk in {at}"))?;
         take_down()?;
-        ramdisk.unpack(Path::new("/")).with_context(|| format!("unpack the ramdisk in {at}"))?;
-        log(&format!("the ramdisk in {at} is unpacked, and its first program takes over"));
+        ramdisk
+            .unpack(Path::new("/"))
+            .with_context(|| format!("unpack the ramdisk in {at}"))?;
+        log(&format!(
+            "the ramdisk in {at} is unpacked, and its first program takes over"
+        ));
         exec(&format!("/{INIT}"))
     }
 
@@ -513,7 +630,13 @@ mod sys {
         std::thread::spawn(|| {
             let recovery = c("recovery");
             unsafe {
-                libc::syscall(libc::SYS_reboot, libc::LINUX_REBOOT_MAGIC1, libc::LINUX_REBOOT_MAGIC2, libc::LINUX_REBOOT_CMD_RESTART2, recovery.as_ptr());
+                libc::syscall(
+                    libc::SYS_reboot,
+                    libc::LINUX_REBOOT_MAGIC1,
+                    libc::LINUX_REBOOT_MAGIC2,
+                    libc::LINUX_REBOOT_CMD_RESTART2,
+                    recovery.as_ptr(),
+                );
             }
         });
         std::thread::sleep(RESTART_WAIT);
@@ -532,7 +655,10 @@ mod sys {
     /// that the storage's come up all the same.
     fn watch() {
         std::thread::sleep(GIVE_UP);
-        let during = STEP.lock().expect("nothing panics while it holds the step").clone();
+        let during = STEP
+            .lock()
+            .expect("nothing panics while it holds the step")
+            .clone();
         let still = match fs::read_to_string("/proc/modules") {
             Ok(text) => loading(&text),
             Err(e) => {
@@ -590,7 +716,13 @@ mod sys {
     /// so that a phone restarted on the way brings the recovery up at its
     /// next start; what misc held before is put back at the hand-over.
     fn keep_way_back(start: &Start) -> Result<()> {
-        bcb::write(Path::new(MISC_NODE), &request(&format!("the phone restarted while {} was starting", start.id)))
+        bcb::write(
+            Path::new(MISC_NODE),
+            &request(&format!(
+                "the phone restarted while {} was starting",
+                start.id
+            )),
+        )
     }
 
     /// Lay the system's root out, mount it, find the system's own first
@@ -604,7 +736,11 @@ mod sys {
         step("mounting the root");
         mount(node, NEW_ROOT, Some(&start.filesystem), 0, None)?;
         step(&format!("finding {} in the root", start.init));
-        ensure!(startable(&start.init)?, "the root holds no program {} to start", start.init);
+        ensure!(
+            startable(&start.init)?,
+            "the root holds no program {} to start",
+            start.init
+        );
         step("putting back what misc held");
         bcb::write(Path::new(MISC_NODE), before)?;
         if GIVEN_UP.load(Ordering::SeqCst) {
@@ -621,7 +757,10 @@ mod sys {
 
     /// Start the system, or bring the recovery up to say why it stopped.
     pub fn init() -> ! {
-        std::thread::Builder::new().name("watch".into()).spawn(watch).expect("a thread to watch the start");
+        std::thread::Builder::new()
+            .name("watch".into())
+            .spawn(watch)
+            .expect("a thread to watch the start");
         let Err(e) = start();
         step("telling the recovery why the start stopped");
         if !Path::new(MISC_NODE).exists()
@@ -664,7 +803,10 @@ mod tests {
         assert_eq!(reason("could not\nmount"), "could not mount");
         let long = "长".repeat(400);
         let r = reason(&long);
-        assert!(r.len() <= REASON_MAX && long.starts_with(&r), "cut at a character's edge");
+        assert!(
+            r.len() <= REASON_MAX && long.starts_with(&r),
+            "cut at a character's edge"
+        );
     }
 
     #[test]
@@ -676,15 +818,30 @@ mod tests {
 
     #[test]
     fn a_start_given_up_says_where_it_stopped() {
-        assert_eq!(stalled("loading the drivers", 60, &["hwid".into()]), "the start stopped while loading the drivers, with hwid still loading, and was given up after 60 s");
-        assert_eq!(stalled("mounting the root", 60, &[]), "the start stopped while mounting the root, and was given up after 60 s");
+        assert_eq!(
+            stalled("loading the drivers", 60, &["hwid".into()]),
+            "the start stopped while loading the drivers, with hwid still loading, and was given up after 60 s"
+        );
+        assert_eq!(
+            stalled("mounting the root", 60, &[]),
+            "the start stopped while mounting the root, and was given up after 60 s"
+        );
     }
 
     #[test]
     fn a_partitions_uevent_names_it_and_its_numbers() {
         let text = "MAJOR=259\nMINOR=14\nDEVNAME=sda30\nDEVTYPE=partition\nDISKSEQ=33\nPARTN=30\nPARTNAME=userdata\n";
-        assert_eq!(uevent(text).unwrap(), ("sda30".into(), Some("userdata".into()), (259, 14)));
-        assert_eq!(uevent("MAJOR=8\nMINOR=0\nDEVNAME=sda\nDEVTYPE=disk\n").unwrap().1, None, "a whole disk has no partition name");
+        assert_eq!(
+            uevent(text).unwrap(),
+            ("sda30".into(), Some("userdata".into()), (259, 14))
+        );
+        assert_eq!(
+            uevent("MAJOR=8\nMINOR=0\nDEVNAME=sda\nDEVTYPE=disk\n")
+                .unwrap()
+                .1,
+            None,
+            "a whole disk has no partition name"
+        );
         assert!(uevent("DEVNAME=sda\n").is_err());
     }
 }

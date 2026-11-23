@@ -24,8 +24,14 @@ pub enum Fault {
 impl fmt::Display for Fault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Fault::Service { code, said } => write!(f, "the service refused the call with its error {code}{}", aside(said)),
-            Fault::Call { exception, said } => write!(f, "the call ended in {}{}", name(*exception), aside(said)),
+            Fault::Service { code, said } => write!(
+                f,
+                "the service refused the call with its error {code}{}",
+                aside(said)
+            ),
+            Fault::Call { exception, said } => {
+                write!(f, "the call ended in {}{}", name(*exception), aside(said))
+            }
         }
     }
 }
@@ -65,7 +71,10 @@ pub fn ok(r: &mut Reader) -> Result<()> {
     let said = r.string().unwrap_or_default();
     r.i32().context("read the room left for a trace")?;
     Err(match exception {
-        SERVICE_SPECIFIC => Fault::Service { code: r.i32().context("read the service's own error")?, said },
+        SERVICE_SPECIFIC => Fault::Service {
+            code: r.i32().context("read the service's own error")?,
+            said,
+        },
         _ => Fault::Call { exception, said },
     }
     .into())
@@ -93,27 +102,51 @@ pub struct Refusal {
 impl Refusal {
     /// In the service's own terms, by its own number.
     pub fn service(code: i32, said: impl Into<String>) -> Refusal {
-        Refusal { exception: SERVICE_SPECIFIC, code, said: said.into() }
+        Refusal {
+            exception: SERVICE_SPECIFIC,
+            code,
+            said: said.into(),
+        }
     }
 
     pub fn illegal_argument(said: impl Into<String>) -> Refusal {
-        Refusal { exception: ILLEGAL_ARGUMENT, code: 0, said: said.into() }
+        Refusal {
+            exception: ILLEGAL_ARGUMENT,
+            code: 0,
+            said: said.into(),
+        }
     }
 
     pub fn illegal_state(said: impl Into<String>) -> Refusal {
-        Refusal { exception: ILLEGAL_STATE, code: 0, said: said.into() }
+        Refusal {
+            exception: ILLEGAL_STATE,
+            code: 0,
+            said: said.into(),
+        }
     }
 
     pub fn null_pointer(said: impl Into<String>) -> Refusal {
-        Refusal { exception: NULL_POINTER, code: 0, said: said.into() }
+        Refusal {
+            exception: NULL_POINTER,
+            code: 0,
+            said: said.into(),
+        }
     }
 
     pub fn unsupported(said: impl Into<String>) -> Refusal {
-        Refusal { exception: UNSUPPORTED_OPERATION, code: 0, said: said.into() }
+        Refusal {
+            exception: UNSUPPORTED_OPERATION,
+            code: 0,
+            said: said.into(),
+        }
     }
 
     pub fn security(said: impl Into<String>) -> Refusal {
-        Refusal { exception: SECURITY, code: 0, said: said.into() }
+        Refusal {
+            exception: SECURITY,
+            code: 0,
+            said: said.into(),
+        }
     }
 
     /// The reply that carries it: the mark, what is said, room for a trace
@@ -133,7 +166,12 @@ impl Refusal {
 impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.exception {
-            SERVICE_SPECIFIC => write!(f, "the service's own error {}{}", self.code, aside(&self.said)),
+            SERVICE_SPECIFIC => write!(
+                f,
+                "the service's own error {}{}",
+                self.code,
+                aside(&self.said)
+            ),
             exception => write!(f, "{}{}", name(exception), aside(&self.said)),
         }
     }
@@ -178,13 +216,18 @@ mod tests {
         let e = ok(&mut Reader::new(&bytes)).unwrap_err();
         assert_eq!(refused_with(&e), Some(-62));
         let said = format!("{e:#}");
-        assert!(said.contains("-62") && said.contains("no such key"), "{said}");
+        assert!(
+            said.contains("-62") && said.contains("no such key"),
+            "{said}"
+        );
     }
 
     #[test]
     fn a_services_error_is_still_found_under_what_the_caller_added() {
         let bytes = refusal(SERVICE_SPECIFIC, "", -43);
-        let e = ok(&mut Reader::new(&bytes)).unwrap_err().context("unwrap the key");
+        let e = ok(&mut Reader::new(&bytes))
+            .unwrap_err()
+            .context("unwrap the key");
         assert_eq!(refused_with(&e), Some(-43));
     }
 
@@ -196,7 +239,13 @@ mod tests {
         assert!(format!("{e:#}").contains("not connected"), "{e:#}");
         let state = Refusal::illegal_state("the session is closed").reply();
         let e = ok(&mut Reader::new(state.bytes())).unwrap_err();
-        assert_eq!(e.downcast_ref::<Fault>(), Some(&Fault::Call { exception: ILLEGAL_STATE, said: "the session is closed".into() }));
+        assert_eq!(
+            e.downcast_ref::<Fault>(),
+            Some(&Fault::Call {
+                exception: ILLEGAL_STATE,
+                said: "the session is closed".into()
+            })
+        );
         let mut through = went_through();
         through.bool(true);
         let mut read = Reader::new(through.bytes());

@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// The mark libbinder writes into every call header. Both ends have to agree
 /// on it: it tells apart the copies of libbinder a phone carries, and the one
@@ -46,6 +46,12 @@ pub trait Payload {
 
     fn pointed(&self) -> u64 {
         0
+    }
+
+    /// Whether any address points inside another one, which the driver
+    /// needs told apart from a plain buffer.
+    fn nested(&self) -> bool {
+        false
     }
 }
 
@@ -123,7 +129,8 @@ impl Parcel {
     /// under: the driver gives the other side something to call it by.
     pub fn object(&mut self, number: u64) {
         self.objects.push(self.data.len() as u64);
-        self.data.extend_from_slice(&BINDER_TYPE_BINDER.to_le_bytes());
+        self.data
+            .extend_from_slice(&BINDER_TYPE_BINDER.to_le_bytes());
         self.data.extend_from_slice(&OBJECT_FLAGS.to_le_bytes());
         self.data.extend_from_slice(&number.to_le_bytes());
         self.data.extend_from_slice(&number.to_le_bytes());
@@ -133,7 +140,8 @@ impl Parcel {
     /// An object left out where one may be: libbinder writes it as one of
     /// its own that is nowhere, which the driver passes on as it is.
     pub fn no_object(&mut self) {
-        self.data.extend_from_slice(&BINDER_TYPE_BINDER.to_le_bytes());
+        self.data
+            .extend_from_slice(&BINDER_TYPE_BINDER.to_le_bytes());
         self.data.extend_from_slice(&[0; OBJECT_BYTES - 4]);
         self.i32(STABILITY_UNDECLARED);
     }
@@ -195,7 +203,10 @@ impl<'a> Reader<'a> {
 
     pub fn go(&mut self, at: usize) -> Result<()> {
         if at > self.data.len() {
-            bail!("the reply ends at {} and holds no position {at}", self.data.len());
+            bail!(
+                "the reply ends at {} and holds no position {at}",
+                self.data.len()
+            );
         }
         self.at = at;
         Ok(())
@@ -204,7 +215,11 @@ impl<'a> Reader<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.at + n;
         if end > self.data.len() {
-            bail!("the reply holds {} bytes, {n} more were read at {}", self.data.len(), self.at);
+            bail!(
+                "the reply holds {} bytes, {n} more were read at {}",
+                self.data.len(),
+                self.at
+            );
         }
         let out = &self.data[self.at..end];
         self.at = end;
@@ -212,11 +227,15 @@ impl<'a> Reader<'a> {
     }
 
     pub fn i32(&mut self) -> Result<i32> {
-        Ok(i32::from_le_bytes(self.take(4)?.try_into().expect("four bytes")))
+        Ok(i32::from_le_bytes(
+            self.take(4)?.try_into().expect("four bytes"),
+        ))
     }
 
     pub fn i64(&mut self) -> Result<i64> {
-        Ok(i64::from_le_bytes(self.take(8)?.try_into().expect("eight bytes")))
+        Ok(i64::from_le_bytes(
+            self.take(8)?.try_into().expect("eight bytes"),
+        ))
     }
 
     pub fn bool(&mut self) -> Result<bool> {
@@ -252,7 +271,8 @@ impl<'a> Reader<'a> {
     pub fn call(&mut self) -> Result<String> {
         self.i32().context("read the caller's strict mode")?;
         self.i32().context("read the caller's work source")?;
-        self.i32().context("read the mark of the caller's libbinder")?;
+        self.i32()
+            .context("read the mark of the caller's libbinder")?;
         self.string().context("read the interface called")
     }
 
@@ -263,7 +283,12 @@ impl<'a> Reader<'a> {
         }
         let raw = self.take((units as usize + 1) * 2)?;
         self.skip_padding();
-        let utf16: Vec<u16> = raw[..units as usize * 2].as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
+        let utf16: Vec<u16> = raw[..units as usize * 2]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
         Ok(String::from_utf16_lossy(&utf16))
     }
 
@@ -275,7 +300,8 @@ impl<'a> Reader<'a> {
         let raw = self.take(24)?;
         let kind = u32::from_le_bytes(raw[0..4].try_into().expect("four bytes"));
         let handle = u32::from_le_bytes(raw[8..12].try_into().expect("four bytes"));
-        self.i32().context("read how far the object's interface travels")?;
+        self.i32()
+            .context("read how far the object's interface travels")?;
         Ok((kind == BINDER_TYPE_HANDLE).then_some(handle))
     }
 
@@ -329,7 +355,11 @@ mod tests {
         vendor.i32(-1);
         vendor.i32(i32::from_be_bytes(*b"VNDR"));
         vendor.string("a.b.IC");
-        assert_eq!(Reader::new(vendor.bytes()).call().unwrap(), "a.b.IC", "the vendor partition's copy");
+        assert_eq!(
+            Reader::new(vendor.bytes()).call().unwrap(),
+            "a.b.IC",
+            "the vendor partition's copy"
+        );
         assert!(Reader::new(&[0; 8]).call().is_err(), "a call cut short");
     }
 
@@ -340,19 +370,38 @@ mod tests {
         p.object(0x1234);
         p.no_object();
         p.strings(&["eSE1", "SIM1"]);
-        assert_eq!(p.addresses(), [4], "one object, after the first value; one left out is none");
+        assert_eq!(
+            p.addresses(),
+            [4],
+            "one object, after the first value; one left out is none"
+        );
         let mut r = Reader::new(p.bytes());
         r.i32().unwrap();
         let raw = &p.bytes()[4..32];
         assert_eq!(&raw[0..4], b"\x85*bs", "one of the sender's own");
-        assert_eq!(u32::from_le_bytes(raw[4..8].try_into().unwrap()), 0x113, "takes file descriptors, at the lowest ordinary priority");
+        assert_eq!(
+            u32::from_le_bytes(raw[4..8].try_into().unwrap()),
+            0x113,
+            "takes file descriptors, at the lowest ordinary priority"
+        );
         assert_eq!(u64::from_le_bytes(raw[8..16].try_into().unwrap()), 0x1234);
         assert_eq!(u64::from_le_bytes(raw[16..24].try_into().unwrap()), 0x1234);
-        assert_eq!(i32::from_le_bytes(raw[24..28].try_into().unwrap()), 63, "an interface the phone and the system both keep to");
-        assert_eq!(r.object().unwrap(), None, "the sender's own is no handle to the reader");
+        assert_eq!(
+            i32::from_le_bytes(raw[24..28].try_into().unwrap()),
+            63,
+            "an interface the phone and the system both keep to"
+        );
+        assert_eq!(
+            r.object().unwrap(),
+            None,
+            "the sender's own is no handle to the reader"
+        );
         assert_eq!(r.object().unwrap(), None, "and neither is one left out");
         assert_eq!(r.i32().unwrap(), 2);
-        assert_eq!((r.string().unwrap(), r.string().unwrap()), ("eSE1".to_string(), "SIM1".to_string()));
+        assert_eq!(
+            (r.string().unwrap(), r.string().unwrap()),
+            ("eSE1".to_string(), "SIM1".to_string())
+        );
         assert_eq!(r.here(), p.bytes().len());
     }
 
@@ -368,7 +417,10 @@ mod tests {
         assert_eq!(r.opt_blob().unwrap(), Some(vec![9]));
         let mut left_out = Parcel::default();
         left_out.opt_blob(None);
-        assert!(Reader::new(left_out.bytes()).blob().is_err(), "where one has to be there");
+        assert!(
+            Reader::new(left_out.bytes()).blob().is_err(),
+            "where one has to be there"
+        );
     }
 
     #[test]
@@ -381,7 +433,11 @@ mod tests {
         p.string("路");
         p.opt_blob(None);
         p.blob(&[]);
-        assert_eq!(p.bytes().len() % 4, 0, "every value ends on a four-byte boundary");
+        assert_eq!(
+            p.bytes().len() % 4,
+            0,
+            "every value ends on a four-byte boundary"
+        );
         let mut r = Reader::new(p.bytes());
         assert_eq!(r.i32().unwrap(), -7);
         assert_eq!(r.i64().unwrap(), 1 << 40);
@@ -452,7 +508,11 @@ mod tests {
         let end = r.structure().unwrap();
         assert_eq!(r.i32().unwrap(), 7);
         r.go(end).unwrap();
-        assert_eq!(r.i32().unwrap(), 99, "what follows the structure comes next");
+        assert_eq!(
+            r.i32().unwrap(),
+            99,
+            "what follows the structure comes next"
+        );
     }
 
     #[test]

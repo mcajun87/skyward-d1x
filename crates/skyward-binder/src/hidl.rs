@@ -7,7 +7,7 @@
 //! the bytes themselves pointing back at that frame.
 
 use crate::parcel::Payload;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// An address a call hands over, as the driver carries it.
 const ADDRESS: u32 = u32::from_be_bytes([b'p', b't', b'*', 0x85]);
@@ -41,6 +41,7 @@ pub struct Message {
     addresses: Vec<u64>,
     held: Vec<Box<[u8]>>,
     pointed: u64,
+    nested: bool,
 }
 
 impl Message {
@@ -60,6 +61,10 @@ impl Message {
         self.data.extend_from_slice(&v.to_le_bytes());
     }
 
+    pub fn i32(&mut self, v: i32) {
+        self.data.extend_from_slice(&v.to_le_bytes());
+    }
+
     pub fn u64(&mut self, v: u64) {
         self.data.extend_from_slice(&v.to_le_bytes());
     }
@@ -69,6 +74,72 @@ impl Message {
     pub fn bytes(&mut self, value: &[u8]) {
         let at = self.keep(value.to_vec());
         self.framed(at, value.len(), value.len());
+    }
+
+    /// A buffer handed over as one address. This is what the top-level
+    /// `vec` and `string` types use in this layout.
+    pub fn buffer(&mut self, value: &[u8]) {
+        let at = self.keep(value.to_vec());
+        self.address(at, value.len(), None, 0);
+    }
+
+    /// A struct whose last field is a `hidl_vec`: the struct itself goes
+    /// over as one address, and the vector's data as a child of it.
+    pub fn struct_with_tail_vec(&mut self, head: &[u8], tail: &[u8], tail_offset: usize) {
+        let tail_at = self.keep(tail.to_vec());
+        let mut body = head.to_vec();
+        body.resize(tail_offset + FRAME_BYTES, 0);
+        body[tail_offset..tail_offset + 8].copy_from_slice(&tail_at.to_le_bytes());
+        body[tail_offset + 8..tail_offset + 12].copy_from_slice(&(tail.len() as u32).to_le_bytes());
+        let body_at = self.keep(body);
+        let body_len = tail_offset + FRAME_BYTES;
+        let parent = self.address(body_at, body_len, None, 0);
+        self.address(tail_at, tail.len(), Some(parent), tail_offset);
+    }
+
+    /// A `hidl_vec<KeyParameter>`: one `hidl_vec` object pointing at a
+    /// contiguous array of 32-byte `KeyParameter` structs. Each parameter's
+    /// blob is a child vector inside the array, so the driver is told where
+    /// in the parent array each blob sits.
+    pub fn key_parameters(&mut self, params: &[(i32, i32, Option<Vec<u8>>)]) {
+        const PARAMETER_BYTES: usize = 32;
+        const BLOB_OFFSET: usize = 16;
+        let mut body = vec![0u8; params.len() * PARAMETER_BYTES];
+        let mut blobs = Vec::new();
+        for (i, (tag, value, blob)) in params.iter().enumerate() {
+            let at = i * PARAMETER_BYTES;
+            body[at..at + 4].copy_from_slice(&(*tag as u32).to_le_bytes());
+            body[at + 8..at + 12].copy_from_slice(&(*value as u32).to_le_bytes());
+            if let Some(bytes) = blob {
+                let bytes_at = self.keep(bytes.clone());
+                body[at + BLOB_OFFSET..at + BLOB_OFFSET + 8]
+                    .copy_from_slice(&bytes_at.to_le_bytes());
+                body[at + BLOB_OFFSET + 8..at + BLOB_OFFSET + 12]
+                    .copy_from_slice(&(bytes.len() as u32).to_le_bytes());
+                blobs.push((bytes_at, bytes.len(), at + BLOB_OFFSET));
+            } else {
+                // HIDL's generated reader calls readEmbeddedFromParcel for
+                // every KeyParameter's blob vector, including the parameters
+                // whose value is in the integer union. An empty vector still
+                // needs its child buffer object, or the reader walks past the
+                // end of the parent and rejects the whole call.
+                let empty_at = self.keep(Vec::new());
+                blobs.push((empty_at, 0, at + BLOB_OFFSET));
+            }
+        }
+        let body_at = self.keep(body);
+        let body_len = params.len() * PARAMETER_BYTES;
+        // The top-level value is a hidl_vec: its frame names the array.
+        let mut frame = Vec::with_capacity(FRAME_BYTES);
+        frame.extend_from_slice(&body_at.to_le_bytes());
+        frame.extend_from_slice(&(params.len() as u32).to_le_bytes());
+        frame.extend_from_slice(&[0; 4]);
+        let frame_at = self.keep(frame);
+        let frame_address = self.address(frame_at, FRAME_BYTES, None, 0);
+        let array_address = self.address(body_at, body_len, Some(frame_address), 0);
+        for (bytes_at, bytes_len, offset) in blobs {
+            self.address(bytes_at, bytes_len, Some(array_address), offset);
+        }
     }
 
     /// Text, which is a run of bytes with a terminator the count leaves
@@ -97,24 +168,35 @@ impl Message {
         // Whoever reads the frame does not free what it points at.
         frame.extend_from_slice(&[0; 4]);
         let frame_at = self.keep(frame);
-        let parent = self.address(frame_at, FRAME_BYTES, None);
-        self.address(at, length, Some(parent));
+        let parent = self.address(frame_at, FRAME_BYTES, None, 0);
+        self.address(at, length, Some(parent), 0);
     }
 
     /// Write an address among the values and say where it sits, which is
     /// how the driver finds it. The answer is which address this is, for
     /// the one pointing inside it to name.
-    fn address(&mut self, at: u64, length: usize, inside: Option<usize>) -> usize {
+    fn address(
+        &mut self,
+        at: u64,
+        length: usize,
+        inside: Option<usize>,
+        parent_offset: usize,
+    ) -> usize {
         let which = self.addresses.len();
         self.addresses.push(self.data.len() as u64);
         self.data.extend_from_slice(&ADDRESS.to_le_bytes());
-        self.data.extend_from_slice(&inside.map_or(0, |_| INSIDE_ANOTHER).to_le_bytes());
+        self.data
+            .extend_from_slice(&inside.map_or(0, |_| INSIDE_ANOTHER).to_le_bytes());
         self.data.extend_from_slice(&at.to_le_bytes());
         self.data.extend_from_slice(&(length as u64).to_le_bytes());
-        self.data.extend_from_slice(&(inside.unwrap_or(0) as u64).to_le_bytes());
-        // The address inside the frame is the frame's first field.
-        self.data.extend_from_slice(&0u64.to_le_bytes());
+        self.data
+            .extend_from_slice(&(inside.unwrap_or(0) as u64).to_le_bytes());
+        self.data
+            .extend_from_slice(&(parent_offset as u64).to_le_bytes());
         self.pointed += (length as u64).next_multiple_of(WORD);
+        if inside.is_some() {
+            self.nested = true;
+        }
         which
     }
 }
@@ -130,6 +212,10 @@ impl Payload for Message {
 
     fn pointed(&self) -> u64 {
         self.pointed
+    }
+
+    fn nested(&self) -> bool {
+        self.nested
     }
 }
 
@@ -147,7 +233,9 @@ impl<'a> Answer<'a> {
     /// Whether the call went through. A service that refused says so first,
     /// and says why in the text that follows.
     pub fn status(&mut self) -> Result<()> {
-        let code = self.i32().context("read whether the service took the call")?;
+        let code = self
+            .i32()
+            .context("read whether the service took the call")?;
         if code == 0 {
             return Ok(());
         }
@@ -158,12 +246,56 @@ impl<'a> Answer<'a> {
     }
 
     pub fn i32(&mut self) -> Result<i32> {
-        Ok(i32::from_le_bytes(self.take(4)?.try_into().expect("four bytes")))
+        Ok(i32::from_le_bytes(
+            self.take(4)?.try_into().expect("four bytes"),
+        ))
+    }
+
+    pub fn u32(&mut self) -> Result<u32> {
+        Ok(u32::from_le_bytes(
+            self.take(4)?.try_into().expect("four bytes"),
+        ))
     }
 
     /// A truth value: a byte, padded to four as everything is.
     pub fn bool(&mut self) -> Result<bool> {
         Ok(self.take(4)?[0] != 0)
+    }
+
+    pub fn u64(&mut self) -> Result<u64> {
+        Ok(u64::from_le_bytes(
+            self.take(8)?.try_into().expect("eight bytes"),
+        ))
+    }
+
+    /// A string, which the phone's own libraries write as a pointer to its
+    /// characters: the bytes are read where they lie, and the terminator
+    /// the wire adds is dropped.
+    pub fn string(&mut self) -> Result<String> {
+        let raw = self.pointed()?;
+        let end = raw.iter().position(|b| *b == 0).unwrap_or(raw.len());
+        Ok(String::from_utf8_lossy(&raw[..end]).into_owned())
+    }
+
+    /// A vector as the phone writes one back: a frame naming the vector,
+    /// then a second frame holding its elements. Empty vectors still carry
+    /// the second frame, with no bytes in it.
+    pub fn vector(&mut self) -> Result<&'a [u8]> {
+        let _frame = self.pointed()?;
+        let raw = self.take(ADDRESS_BYTES)?;
+        let kind = u32::from_le_bytes(raw[0..4].try_into().expect("four bytes"));
+        if kind != ADDRESS {
+            bail!("the reply holds {kind:#x} where a vector was expected");
+        }
+        let at = u64::from_le_bytes(raw[8..16].try_into().expect("eight bytes"));
+        let length = u64::from_le_bytes(raw[16..24].try_into().expect("eight bytes"));
+        if at == 0 {
+            if length == 0 {
+                return Ok(&[]);
+            }
+            bail!("the service left out a vector of {length} bytes");
+        }
+        Ok(unsafe { std::slice::from_raw_parts(at as *const u8, length as usize) })
     }
 
     /// The bytes an address in the reply points at. The driver has already
@@ -193,7 +325,12 @@ impl<'a> Answer<'a> {
         while !self.at.is_multiple_of(4) && self.at < self.data.len() {
             self.at += 1;
         }
-        let utf16: Vec<u16> = raw[..units as usize * 2].as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
+        let utf16: Vec<u16> = raw[..units as usize * 2]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
         Ok(String::from_utf16_lossy(&utf16))
     }
 
@@ -208,7 +345,11 @@ impl<'a> Answer<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.at + n;
         if end > self.data.len() {
-            bail!("the reply holds {} bytes, {n} more were read at {}", self.data.len(), self.at);
+            bail!(
+                "the reply holds {} bytes, {n} more were read at {}",
+                self.data.len(),
+                self.at
+            );
         }
         let out = &self.data[self.at..end];
         self.at = end;
@@ -219,7 +360,11 @@ impl<'a> Answer<'a> {
 /// The hardware service serving `interface` as `instance`, or `None` while
 /// nothing has registered it.
 #[cfg(target_os = "android")]
-pub fn find<'a>(binder: &'a crate::driver::Binder, interface: &str, instance: &str) -> Result<Option<crate::driver::Handle<'a>>> {
+pub fn find<'a>(
+    binder: &'a crate::driver::Binder,
+    interface: &str,
+    instance: &str,
+) -> Result<Option<crate::driver::Handle<'a>>> {
     use crate::driver::Handle;
     // The directory the phone's hardware services register with, which is
     // a second one beside the directory the rest of the phone uses, and
@@ -230,10 +375,16 @@ pub fn find<'a>(binder: &'a crate::driver::Binder, interface: &str, instance: &s
     let mut call = Message::call(DIRECTORY);
     call.text(interface);
     call.text(instance);
-    let reply = directory.transact(GET, &call).with_context(|| format!("look up {interface}/{instance}"))?;
+    let reply = directory
+        .transact(GET, &call)
+        .with_context(|| format!("look up {interface}/{instance}"))?;
     let mut read = Answer::new(reply.bytes());
-    read.status().with_context(|| format!("look up {interface}/{instance}"))?;
-    match read.object().with_context(|| format!("read what the directory answered for {interface}"))? {
+    read.status()
+        .with_context(|| format!("look up {interface}/{instance}"))?;
+    match read
+        .object()
+        .with_context(|| format!("read what the directory answered for {interface}"))?
+    {
         Some(handle) => Ok(Some(Handle::hold(reply.binder(), handle)?)),
         None => Ok(None),
     }
@@ -247,14 +398,20 @@ pub fn describes(service: &crate::driver::Handle) -> Result<String> {
     // call on it is named as being on it whatever else the service serves.
     const BASE: &str = "android.hidl.base@1.0::IBase";
     const DESCRIBE: u32 = 256_136_003;
-    let reply = service.transact(DESCRIBE, &Message::call(BASE)).context("ask the service what it serves")?;
+    let reply = service
+        .transact(DESCRIBE, &Message::call(BASE))
+        .context("ask the service what it serves")?;
     let mut read = Answer::new(reply.bytes());
     read.status().context("ask the service what it serves")?;
-    let frame = read.pointed().context("read the frame of what the service serves")?;
+    let frame = read
+        .pointed()
+        .context("read the frame of what the service serves")?;
     if frame.len() < FRAME_BYTES {
         bail!("the service answered a frame of {} bytes", frame.len());
     }
-    let name = read.pointed().context("read the name of what the service serves")?;
+    let name = read
+        .pointed()
+        .context("read the name of what the service serves")?;
     Ok(String::from_utf8_lossy(name.trim_suffix(&[0])).into_owned())
 }
 
@@ -273,7 +430,8 @@ mod tests {
                 let points = u64::from_le_bytes(raw[8..16].try_into().unwrap());
                 let length = u64::from_le_bytes(raw[16..24].try_into().unwrap()) as usize;
                 let inside = u64::from_le_bytes(raw[24..32].try_into().unwrap());
-                let bytes = unsafe { std::slice::from_raw_parts(points as *const u8, length) }.to_vec();
+                let bytes =
+                    unsafe { std::slice::from_raw_parts(points as *const u8, length) }.to_vec();
                 assert_eq!(u32::from_le_bytes(raw[0..4].try_into().unwrap()), ADDRESS);
                 assert_eq!(u64::from_le_bytes(raw[32..40].try_into().unwrap()), 0);
                 (flags, inside, bytes)
@@ -285,7 +443,11 @@ mod tests {
     fn a_call_opens_with_the_interface_name_and_a_terminator() {
         let m = Message::call("a.b@1.0::IC");
         assert_eq!(&m.data[..11], b"a.b@1.0::IC");
-        assert_eq!(m.data.len(), 12, "the name, its terminator, and padding to four");
+        assert_eq!(
+            m.data.len(),
+            12,
+            "the name, its terminator, and padding to four"
+        );
         assert_eq!(m.data[11], 0);
         assert!(m.addresses.is_empty());
     }
@@ -295,9 +457,16 @@ mod tests {
         let mut m = Message::call("a.b@1.0::IC");
         m.u32(7);
         m.u64(1 << 40);
-        assert_eq!(m.data.len(), 12 + 4 + 8, "a word is not moved to a boundary of its own");
+        assert_eq!(
+            m.data.len(),
+            12 + 4 + 8,
+            "a word is not moved to a boundary of its own"
+        );
         assert_eq!(u32::from_le_bytes(m.data[12..16].try_into().unwrap()), 7);
-        assert_eq!(u64::from_le_bytes(m.data[16..24].try_into().unwrap()), 1 << 40);
+        assert_eq!(
+            u64::from_le_bytes(m.data[16..24].try_into().unwrap()),
+            1 << 40
+        );
     }
 
     #[test]
@@ -308,11 +477,19 @@ mod tests {
         assert_eq!(parts.len(), 2, "the frame, then the bytes");
         assert_eq!(parts[0].0, 0, "the frame points inside nothing");
         assert_eq!(parts[0].2.len(), FRAME_BYTES);
-        assert_eq!(u32::from_le_bytes(parts[0].2[8..12].try_into().unwrap()), 3, "how many bytes there are");
+        assert_eq!(
+            u32::from_le_bytes(parts[0].2[8..12].try_into().unwrap()),
+            3,
+            "how many bytes there are"
+        );
         assert_eq!(parts[1].0, INSIDE_ANOTHER, "the bytes sit inside the frame");
         assert_eq!(parts[1].1, 0, "inside the first address of the call");
         assert_eq!(parts[1].2, vec![1, 2, 3]);
-        assert_eq!(m.pointed, FRAME_BYTES as u64 + WORD, "both rounded up to a word");
+        assert_eq!(
+            m.pointed,
+            FRAME_BYTES as u64 + WORD,
+            "both rounded up to a word"
+        );
     }
 
     #[test]
@@ -320,7 +497,11 @@ mod tests {
         let mut m = Message::call("a.b@1.0::IC");
         m.text("default");
         let parts = written(&m);
-        assert_eq!(u32::from_le_bytes(parts[0].2[8..12].try_into().unwrap()), 7, "the terminator is not counted");
+        assert_eq!(
+            u32::from_le_bytes(parts[0].2[8..12].try_into().unwrap()),
+            7,
+            "the terminator is not counted"
+        );
         assert_eq!(parts[1].2, b"default\0", "but it is carried");
     }
 
@@ -353,7 +534,11 @@ mod tests {
         let mut read = Answer::new(&[1, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0]);
         assert!(read.bool().unwrap());
         assert!(!read.bool().unwrap());
-        assert_eq!(read.i32().unwrap(), 7, "what follows it starts four bytes on");
+        assert_eq!(
+            read.i32().unwrap(),
+            7,
+            "what follows it starts four bytes on"
+        );
         assert!(Answer::new(&[1, 0]).bool().is_err());
     }
 }

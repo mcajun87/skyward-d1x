@@ -10,19 +10,35 @@ pub enum Target {
     Recovery,
     Fastboot,
     Bootloader,
-    Edl,
+    Download,
     PowerOff,
 }
 
-pub const TARGETS: [Target; 6] = [Target::System, Target::Recovery, Target::Fastboot, Target::Bootloader, Target::Edl, Target::PowerOff];
+pub const TARGETS: [Target; 6] = [
+    Target::System,
+    Target::Recovery,
+    Target::Fastboot,
+    Target::Bootloader,
+    Target::Download,
+    Target::PowerOff,
+];
 
 /// Where the fastboot page goes, in the order it lists them: the volume
 /// keys move between them and the power key takes one.
 pub const FASTBOOT_CHOICES: [(Text, Action); 4] = [
-    (texts::installed::REBOOT_TO_SYSTEM, Action::RebootTo(Target::System)),
+    (
+        texts::installed::REBOOT_TO_SYSTEM,
+        Action::RebootTo(Target::System),
+    ),
     (texts::afterwards::ENTER_RECOVERY, Action::EnterRecovery),
-    (texts::fastboot::REBOOT_TO_BOOTLOADER, Action::RebootTo(Target::Bootloader)),
-    (texts::reboot::target::POWER_OFF, Action::RebootTo(Target::PowerOff)),
+    (
+        texts::fastboot::REBOOT_TO_BOOTLOADER,
+        Action::RebootTo(Target::Bootloader),
+    ),
+    (
+        texts::reboot::target::POWER_OFF,
+        Action::RebootTo(Target::PowerOff),
+    ),
 ];
 
 /// How far a computer has the USB port.
@@ -74,7 +90,13 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Reboot, W, H, PPD);
         tap(&mut app, &f, &i, Action::RebootTarget(3));
-        let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::Reboot)).unwrap().rect;
+        let track = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Confirm(Confirm::Reboot))
+            .unwrap()
+            .rect;
         let y = track.centre().1;
         app.touch(Touch::Down(track.x + track.h / 2.0, y), &f, 0);
         app.touch(Touch::Move(track.x + track.w / 2.0, y), &f, 0);
@@ -88,7 +110,13 @@ mod tests {
     fn letting_go_halfway_does_not_reboot() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Reboot, W, H, PPD);
-        let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::Reboot)).unwrap().rect;
+        let track = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Confirm(Confirm::Reboot))
+            .unwrap()
+            .rect;
         let y = track.centre().1;
         app.touch(Touch::Down(track.x + track.h / 2.0, y), &f, 0);
         app.touch(Touch::Move(track.x + track.w / 2.0, y), &f, 0);
@@ -102,7 +130,10 @@ mod tests {
         let fastboot = TARGETS.iter().position(|t| *t == Target::Fastboot).unwrap();
         tap(&mut app, &f, &i, Action::RebootTarget(fastboot));
         assert_eq!(app.state.reboot, fastboot);
-        assert_eq!(swipe(&mut app, &f, &i, Confirm::Reboot), vec![Effect::Reboot(Target::Fastboot)]);
+        assert_eq!(
+            swipe(&mut app, &f, &i, Confirm::Reboot),
+            vec![Effect::Reboot(Target::Fastboot)]
+        );
     }
 
     #[test]
@@ -110,19 +141,45 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Fastboot, W, H, PPD);
         let choice = |k: usize| Some(Stop::Hit(FASTBOOT_CHOICES[k].1));
-        assert_eq!(lit(&mut app, &f, &i), choice(0), "the first choice is lit as the page opens");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            choice(0),
+            "the first choice is lit as the page opens"
+        );
         assert!(press(&mut app, Key::VolumeDown, 0).is_empty());
-        assert_eq!(lit(&mut app, &f, &i), choice(1), "down moves to the next choice");
-        assert!(app.key(Key::Power, 0).is_empty(), "power takes it as it comes up");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            choice(1),
+            "down moves to the next choice"
+        );
+        assert!(
+            app.key(Key::Power, 0).is_empty(),
+            "power takes it as it comes up"
+        );
         assert_eq!(app.key_up(Key::Power, 0), vec![Effect::EnterRecovery]);
         assert!(app.display_on(), "power leaves the panel on here");
         press(&mut app, Key::VolumeUp, 0);
         press(&mut app, Key::VolumeUp, 0);
-        assert_eq!(lit(&mut app, &f, &i), choice(FASTBOOT_CHOICES.len() - 1), "up from the first goes round to the last");
-        assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Reboot(Target::PowerOff)]);
-        assert_eq!(tap(&mut app, &f, &i, Action::RebootTo(Target::Bootloader)), vec![Effect::Reboot(Target::Bootloader)], "a touch takes a choice too");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            choice(FASTBOOT_CHOICES.len() - 1),
+            "up from the first goes round to the last"
+        );
+        assert_eq!(
+            press(&mut app, Key::Power, 0),
+            vec![Effect::Reboot(Target::PowerOff)]
+        );
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::RebootTo(Target::Bootloader)),
+            vec![Effect::Reboot(Target::Bootloader)],
+            "a touch takes a choice too"
+        );
         assert!(press(&mut app, Key::Back, 0).is_empty());
-        assert_eq!(app.screen(), Screen::Fastboot, "there is nothing to go back to");
+        assert_eq!(
+            app.screen(),
+            Screen::Fastboot,
+            "there is nothing to go back to"
+        );
     }
 
     #[test]
@@ -134,10 +191,17 @@ mod tests {
         assert_eq!(app.screen(), Screen::Home);
         app.key(Key::Back, 0);
         assert_eq!(app.screen(), Screen::Home, "fastboot is not behind it");
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))), "the keys go on working the pages");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search))),
+            "the keys go on working the pages"
+        );
         app.touch(Touch::Down(W as f32 / 2.0, 200.0), &f, 0);
         app.touch(Touch::Up, &f, 0);
         assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Ticks]);
-        assert!(!app.display_on(), "with the light put out, power turns the panel off");
+        assert!(
+            !app.display_on(),
+            "with the light put out, power turns the panel off"
+        );
     }
 }

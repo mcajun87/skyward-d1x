@@ -49,7 +49,10 @@ pub enum Refused {
 pub fn check(command: &[u8]) -> Result<(), Refused> {
     let malformed = |why: String| Err(Refused::Malformed(why));
     if command.len() < HEADER {
-        return malformed(format!("a command of {} bytes has no room for its class, instruction and parameters", command.len()));
+        return malformed(format!(
+            "a command of {} bytes has no room for its class, instruction and parameters",
+            command.len()
+        ));
     }
     let (class, instruction) = (command[0], command[1]);
     if class == 0xff {
@@ -63,10 +66,14 @@ pub fn check(command: &[u8]) -> Result<(), Refused> {
     // opposed to one an applet defines for itself.
     if class & 0x80 == 0 && class & 0x60 != 0x20 {
         if instruction == MANAGE_CHANNEL {
-            return Err(Refused::NotAllowed("a caller does not open or close channels itself"));
+            return Err(Refused::NotAllowed(
+                "a caller does not open or close channels itself",
+            ));
         }
         if instruction == SELECT && command[2] == SELECT_BY_NAME {
-            return Err(Refused::NotAllowed("a caller does not select another applet on a channel it was given"));
+            return Err(Refused::NotAllowed(
+                "a caller does not select another applet on a channel it was given",
+            ));
         }
     }
     Ok(())
@@ -92,7 +99,9 @@ fn lengths(command: &[u8]) -> Result<(), String> {
         return match rest {
             n if n == 1 + data => Ok(()),
             n if n == 2 + data => expected(usize::from(command[command.len() - 1])),
-            _ => Err(format!("the command says it carries {data} bytes, and its own length says otherwise")),
+            _ => Err(format!(
+                "the command says it carries {data} bytes, and its own length says otherwise"
+            )),
         };
     }
     let two = |at: usize| usize::from(command[at]) << 8 | usize::from(command[at + 1]);
@@ -109,7 +118,9 @@ fn lengths(command: &[u8]) -> Result<(), String> {
     match rest {
         n if n == 3 + data => Ok(()),
         n if n == 5 + data => expected(two(command.len() - 2)),
-        _ => Err(format!("the command says it carries {data} bytes, and its own length says otherwise")),
+        _ => Err(format!(
+            "the command says it carries {data} bytes, and its own length says otherwise"
+        )),
     }
 }
 
@@ -144,7 +155,9 @@ pub enum Next {
 /// What `answer` to `command` calls for; none where it is too short to say
 /// how the command went.
 pub fn next(command: &[u8], answer: &[u8]) -> Option<Next> {
-    let [.., first, second] = *answer else { return None };
+    let [.., first, second] = *answer else {
+        return None;
+    };
     Some(match first {
         WRONG_LENGTH => {
             let mut again = command.to_vec();
@@ -171,7 +184,9 @@ pub fn name(given: &[u8]) -> Result<Option<&[u8]>, Refused> {
     match given.len() {
         0 => Ok(None),
         n if NAME_BYTES.contains(&n) => Ok(Some(given)),
-        n => Err(Refused::Malformed(format!("an applet's name is 5 to 16 bytes long, not {n}"))),
+        n => Err(Refused::Malformed(format!(
+            "an applet's name is 5 to 16 bytes long, not {n}"
+        ))),
     }
 }
 
@@ -185,7 +200,13 @@ pub fn answers_taken(answers: u8) -> bool {
 /// numbered `channel`: the first that goes by the name, or, `following`,
 /// the one after the one selected now.
 pub fn select(name: &[u8], channel: u8, following: bool) -> Option<Vec<u8>> {
-    let mut command = vec![on_channel(0x00, channel)?, SELECT, SELECT_BY_NAME, if following { 0x02 } else { 0x00 }, name.len() as u8];
+    let mut command = vec![
+        on_channel(0x00, channel)?,
+        SELECT,
+        SELECT_BY_NAME,
+        if following { 0x02 } else { 0x00 },
+        name.len() as u8,
+    ];
     command.extend_from_slice(name);
     Some(command)
 }
@@ -203,9 +224,17 @@ pub enum Selected {
 
 /// What the `answer` to [`select`] says.
 pub fn selected(answer: &[u8]) -> Selected {
-    let [.., first, second] = *answer else { return Selected::Neither };
+    let [.., first, second] = *answer else {
+        return Selected::Neither;
+    };
     match u16::from(first) << 8 | u16::from(second) {
-        status if status & 0xf000 == 0x9000 || status & 0xff00 == 0x6200 || status & 0xff00 == 0x6300 => Selected::Another,
+        status
+            if status & 0xf000 == 0x9000
+                || status & 0xff00 == 0x6200
+                || status & 0xff00 == 0x6300 =>
+        {
+            Selected::Another
+        }
         status if status & 0xff00 == 0x6a00 => Selected::NoOther,
         _ => Selected::Neither,
     }
@@ -217,7 +246,10 @@ mod tests {
 
     fn hex(text: &str) -> Vec<u8> {
         let digits: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
-        digits.chunks(2).map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect()
+        digits
+            .chunks(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
     }
 
     #[test]
@@ -237,18 +269,52 @@ mod tests {
 
     #[test]
     fn a_command_whose_lengths_do_not_add_up_is_refused() {
-        for command in ["80 ca 00", "", "80 20 00 00 03 31 32", "80 20 00 00 02 31 32 00 00", "80 ca 00 fe 00 01", "80 20 00 00 00 00 00 31", "80 20 00 00 00 00 02 31 32 01", "ff ca 00 fe", "80 6a 00 00", "80 90 00 00"] {
-            assert!(matches!(check(&hex(command)), Err(Refused::Malformed(_))), "{command}");
+        for command in [
+            "80 ca 00",
+            "",
+            "80 20 00 00 03 31 32",
+            "80 20 00 00 02 31 32 00 00",
+            "80 ca 00 fe 00 01",
+            "80 20 00 00 00 00 00 31",
+            "80 20 00 00 00 00 02 31 32 01",
+            "ff ca 00 fe",
+            "80 6a 00 00",
+            "80 90 00 00",
+        ] {
+            assert!(
+                matches!(check(&hex(command)), Err(Refused::Malformed(_))),
+                "{command}"
+            );
         }
     }
 
     #[test]
     fn a_caller_manages_no_channels_and_selects_no_other_applet() {
-        assert!(matches!(check(&hex("00 70 00 00 01")), Err(Refused::NotAllowed(_))), "open a channel");
-        assert!(matches!(check(&hex("01 70 80 01")), Err(Refused::NotAllowed(_))), "close one");
-        assert!(matches!(check(&hex("00 a4 04 00 05 a0 00 00 00 03")), Err(Refused::NotAllowed(_))), "select by name");
-        assert_eq!(check(&hex("00 a4 00 0c 02 3f 00")), Ok(()), "select a file, which is not an applet");
-        assert_eq!(check(&hex("80 70 00 00 01")), Ok(()), "an applet's own instruction that happens to share the number");
+        assert!(
+            matches!(check(&hex("00 70 00 00 01")), Err(Refused::NotAllowed(_))),
+            "open a channel"
+        );
+        assert!(
+            matches!(check(&hex("01 70 80 01")), Err(Refused::NotAllowed(_))),
+            "close one"
+        );
+        assert!(
+            matches!(
+                check(&hex("00 a4 04 00 05 a0 00 00 00 03")),
+                Err(Refused::NotAllowed(_))
+            ),
+            "select by name"
+        );
+        assert_eq!(
+            check(&hex("00 a4 00 0c 02 3f 00")),
+            Ok(()),
+            "select a file, which is not an applet"
+        );
+        assert_eq!(
+            check(&hex("80 70 00 00 01")),
+            Ok(()),
+            "an applet's own instruction that happens to share the number"
+        );
     }
 
     #[test]
@@ -256,10 +322,18 @@ mod tests {
         assert_eq!(on_channel(0x00, 0), Some(0x00));
         assert_eq!(on_channel(0x00, 1), Some(0x01));
         assert_eq!(on_channel(0x80, 3), Some(0x83));
-        assert_eq!(on_channel(0x03, 1), Some(0x01), "the channel a caller wrote itself is written over");
+        assert_eq!(
+            on_channel(0x03, 1),
+            Some(0x01),
+            "the channel a caller wrote itself is written over"
+        );
         assert_eq!(on_channel(0x00, 4), Some(0x40));
         assert_eq!(on_channel(0x80, 19), Some(0xcf));
-        assert_eq!(on_channel(0x04, 5), Some(0x61), "a protected command stays protected past the fourth channel");
+        assert_eq!(
+            on_channel(0x04, 5),
+            Some(0x61),
+            "a protected command stays protected past the fourth channel"
+        );
         assert_eq!(on_channel(0x00, 20), None, "there are twenty channels");
     }
 
@@ -267,13 +341,34 @@ mod tests {
     fn an_answer_that_says_more_waits_is_followed_up() {
         let command = hex("81 ca 00 fe 00");
         assert_eq!(next(&command, &hex("01 02 90 00")), Some(Next::Done));
-        assert_eq!(next(&command, &hex("6a 82")), Some(Next::Done), "a failure is an answer too");
-        assert_eq!(next(&command, &hex("01 02 61 10")), Some(Next::More(hex("81 c0 00 00 10"))), "on the channel the command went down");
-        assert_eq!(next(&command, &hex("6c 20")), Some(Next::Again(hex("81 ca 00 fe 20"))));
-        assert_eq!(next(&command, &[0x90]), None, "too short to say how the command went");
+        assert_eq!(
+            next(&command, &hex("6a 82")),
+            Some(Next::Done),
+            "a failure is an answer too"
+        );
+        assert_eq!(
+            next(&command, &hex("01 02 61 10")),
+            Some(Next::More(hex("81 c0 00 00 10"))),
+            "on the channel the command went down"
+        );
+        assert_eq!(
+            next(&command, &hex("6c 20")),
+            Some(Next::Again(hex("81 ca 00 fe 20")))
+        );
+        assert_eq!(
+            next(&command, &[0x90]),
+            None,
+            "too short to say how the command went"
+        );
         assert_eq!(next(&command, &[]), None);
-        assert_eq!(joined(&hex("01 02 61 02"), &hex("03 04 90 00")), hex("01 02 03 04 90 00"));
-        assert_eq!(joined(&hex("61 02"), &hex("03 04 90 00")), hex("03 04 90 00"));
+        assert_eq!(
+            joined(&hex("01 02 61 02"), &hex("03 04 90 00")),
+            hex("01 02 03 04 90 00")
+        );
+        assert_eq!(
+            joined(&hex("61 02"), &hex("03 04 90 00")),
+            hex("03 04 90 00")
+        );
     }
 
     #[test]
@@ -290,11 +385,21 @@ mod tests {
     #[test]
     fn the_applet_after_the_one_selected_is_asked_for_by_the_same_name() {
         let name = hex("a0 00 00 00 03 00 00 00");
-        assert_eq!(select(&name, 2, true), Some(hex("02 a4 04 02 08 a0 00 00 00 03 00 00 00")));
-        assert_eq!(select(&name, 0, false), Some(hex("00 a4 04 00 08 a0 00 00 00 03 00 00 00")));
+        assert_eq!(
+            select(&name, 2, true),
+            Some(hex("02 a4 04 02 08 a0 00 00 00 03 00 00 00"))
+        );
+        assert_eq!(
+            select(&name, 0, false),
+            Some(hex("00 a4 04 00 08 a0 00 00 00 03 00 00 00"))
+        );
         assert_eq!(select(&name, 20, true), None);
         assert_eq!(selected(&hex("6f 00 90 00")), Selected::Another);
-        assert_eq!(selected(&hex("62 83")), Selected::Another, "selected, with a warning");
+        assert_eq!(
+            selected(&hex("62 83")),
+            Selected::Another,
+            "selected, with a warning"
+        );
         assert_eq!(selected(&hex("6a 82")), Selected::NoOther);
         assert_eq!(selected(&hex("6d 00")), Selected::Neither);
         assert_eq!(selected(&[0x90]), Selected::Neither);

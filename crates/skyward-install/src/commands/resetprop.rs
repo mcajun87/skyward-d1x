@@ -37,7 +37,12 @@ pub(super) fn run(args: &[OsString], io: &mut Io) -> i32 {
         Ok(Asked::All) => {
             let mut all = skyward_sys::props("");
             all.sort();
-            say(io, &all.iter().map(|(name, value)| format!("[{name}]: [{value}]\n")).collect::<String>())
+            say(
+                io,
+                &all.iter()
+                    .map(|(name, value)| format!("[{name}]: [{value}]\n"))
+                    .collect::<String>(),
+            )
         }
         // An unset property and an empty one are alike to init.
         Ok(Asked::Get(name)) => match skyward_sys::prop(&name) {
@@ -59,7 +64,11 @@ pub(super) fn run(args: &[OsString], io: &mut Io) -> i32 {
 }
 
 fn say(io: &mut Io, text: &str) -> i32 {
-    match io.output.write_all(text.as_bytes()).and_then(|()| io.output.flush()) {
+    match io
+        .output
+        .write_all(text.as_bytes())
+        .and_then(|()| io.output.flush())
+    {
         Ok(()) => DONE,
         Err(_) => FAILED,
     }
@@ -70,7 +79,9 @@ fn say(io: &mut Io, text: &str) -> i32 {
 fn parse(args: &[OsString]) -> Result<Asked, String> {
     let mut words = Vec::new();
     for arg in args {
-        let arg = arg.to_str().ok_or_else(|| format!("{arg:?} is not UTF-8"))?;
+        let arg = arg
+            .to_str()
+            .ok_or_else(|| format!("{arg:?} is not UTF-8"))?;
         if !words.is_empty() || !arg.starts_with('-') || arg == "-" {
             words.push(arg.to_string());
             continue;
@@ -78,13 +89,21 @@ fn parse(args: &[OsString]) -> Result<Asked, String> {
         match arg {
             "--help" => return Ok(Asked::Help),
             "--verbose" => {}
-            _ if arg.starts_with("--") => return Err(format!("{arg} is not supported: properties are read here, and set through init")),
+            _ if arg.starts_with("--") => {
+                return Err(format!(
+                    "{arg} is not supported: properties are read here, and set through init"
+                ));
+            }
             _ => {
                 for switch in arg[1..].chars() {
                     match switch {
                         'h' => return Ok(Asked::Help),
                         'n' | 'v' => {}
-                        _ => return Err(format!("-{switch} is not supported: properties are read here, and set through init")),
+                        _ => {
+                            return Err(format!(
+                                "-{switch} is not supported: properties are read here, and set through init"
+                            ));
+                        }
                     }
                 }
             }
@@ -108,7 +127,9 @@ fn set(name: &str, value: &str) -> Result<(), String> {
         if now == value {
             return Ok(());
         }
-        return Err(format!("{name} is read-only, and init has set it to {now:?} already"));
+        return Err(format!(
+            "{name} is read-only, and init has set it to {now:?} already"
+        ));
     }
     skyward_sys::set_prop(name, value).map_err(|e| format!("{e:#}"))
 }
@@ -124,15 +145,30 @@ mod tests {
     #[test]
     fn no_name_reads_them_all_a_name_reads_one_and_a_value_sets_it() {
         assert_eq!(parsed(&[]), Ok(Asked::All));
-        assert_eq!(parsed(&["ro.product.device"]), Ok(Asked::Get("ro.product.device".into())));
-        assert_eq!(parsed(&["persist.sys.usb.config", "mtp,adb"]), Ok(Asked::Set("persist.sys.usb.config".into(), "mtp,adb".into())));
+        assert_eq!(
+            parsed(&["ro.product.device"]),
+            Ok(Asked::Get("ro.product.device".into()))
+        );
+        assert_eq!(
+            parsed(&["persist.sys.usb.config", "mtp,adb"]),
+            Ok(Asked::Set(
+                "persist.sys.usb.config".into(),
+                "mtp,adb".into()
+            ))
+        );
         assert!(parsed(&["a", "b", "c"]).is_err());
     }
 
     #[test]
     fn switches_come_first_and_a_value_may_start_with_a_dash() {
-        assert_eq!(parsed(&["-n", "debug.offset", "-1"]), Ok(Asked::Set("debug.offset".into(), "-1".into())));
-        assert_eq!(parsed(&["-nv", "--verbose", "ro.boot.slot_suffix"]), Ok(Asked::Get("ro.boot.slot_suffix".into())));
+        assert_eq!(
+            parsed(&["-n", "debug.offset", "-1"]),
+            Ok(Asked::Set("debug.offset".into(), "-1".into()))
+        );
+        assert_eq!(
+            parsed(&["-nv", "--verbose", "ro.boot.slot_suffix"]),
+            Ok(Asked::Get("ro.boot.slot_suffix".into()))
+        );
         assert_eq!(parsed(&["-v", "-"]), Ok(Asked::Get("-".into())));
         assert_eq!(parsed(&["-h"]), Ok(Asked::Help));
         assert_eq!(parsed(&["--help", "ro.x"]), Ok(Asked::Help));
@@ -140,7 +176,16 @@ mod tests {
 
     #[test]
     fn what_needs_writing_behind_init_is_refused() {
-        for args in [&["-d", "ro.x"][..], &["--delete", "ro.x"], &["-f", "props.txt"], &["--file", "props.txt"], &["-w", "sys.boot_completed"], &["-Z", "ro.x"], &["-p"], &["-np", "persist.x", "1"]] {
+        for args in [
+            &["-d", "ro.x"][..],
+            &["--delete", "ro.x"],
+            &["-f", "props.txt"],
+            &["--file", "props.txt"],
+            &["-w", "sys.boot_completed"],
+            &["-Z", "ro.x"],
+            &["-p"],
+            &["-np", "persist.x", "1"],
+        ] {
             let e = parsed(args).unwrap_err();
             assert!(e.contains("is not supported"), "{args:?}: {e}");
         }

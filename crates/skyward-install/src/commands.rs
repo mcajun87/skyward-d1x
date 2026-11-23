@@ -54,7 +54,14 @@ pub fn run(name: &OsStr, args: &[OsString]) -> Option<i32> {
     unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
     let (stdin, stdout, stderr) = (io::stdin(), io::stdout(), io::stderr());
     let (mut input, mut output, mut errors) = (stdin.lock(), stdout.lock(), stderr.lock());
-    Some(command(args, &mut Io { input: &mut input, output: &mut output, errors: &mut errors }))
+    Some(command(
+        args,
+        &mut Io {
+            input: &mut input,
+            output: &mut output,
+            errors: &mut errors,
+        },
+    ))
 }
 
 /// Where copying stopped.
@@ -92,6 +99,9 @@ mod tests {
             assert!(command(name).is_some(), "{link}");
         }
         assert!(command(OsStr::new("recovery")).is_none());
-        assert!(command(OsStr::new("zipinfo")).is_none(), "the stock recovery's own answers to that name");
+        assert!(
+            command(OsStr::new("zipinfo")).is_none(),
+            "the stock recovery's own answers to that name"
+        );
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
@@ -27,7 +27,11 @@ pub fn prop(name: &str) -> Option<String> {
     if n <= 0 {
         return None;
     }
-    Some(unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned())
+    Some(
+        unsafe { CStr::from_ptr(buf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 /// Hosts have no property area.
@@ -54,24 +58,39 @@ fn yes_or_no(value: Option<&str>) -> Option<bool> {
 /// Every system property whose name starts with `prefix`, with its value.
 #[cfg(target_os = "android")]
 pub fn props(prefix: &str) -> Vec<(String, String)> {
-    use std::ffi::{c_char, c_void, CStr};
+    use std::ffi::{CStr, c_char, c_void};
     unsafe extern "C" {
         fn __system_property_read_callback(
             pi: *const libc::prop_info,
-            callback: unsafe extern "C" fn(cookie: *mut c_void, name: *const c_char, value: *const c_char, serial: u32),
+            callback: unsafe extern "C" fn(
+                cookie: *mut c_void,
+                name: *const c_char,
+                value: *const c_char,
+                serial: u32,
+            ),
             cookie: *mut c_void,
         );
     }
-    unsafe extern "C" fn take(cookie: *mut c_void, name: *const c_char, value: *const c_char, _serial: u32) {
+    unsafe extern "C" fn take(
+        cookie: *mut c_void,
+        name: *const c_char,
+        value: *const c_char,
+        _serial: u32,
+    ) {
         let all = unsafe { &mut *cookie.cast::<Vec<(String, String)>>() };
         let (name, value) = unsafe { (CStr::from_ptr(name), CStr::from_ptr(value)) };
-        all.push((name.to_string_lossy().into_owned(), value.to_string_lossy().into_owned()));
+        all.push((
+            name.to_string_lossy().into_owned(),
+            value.to_string_lossy().into_owned(),
+        ));
     }
     unsafe extern "C" fn each(pi: *const libc::prop_info, cookie: *mut c_void) {
         unsafe { __system_property_read_callback(pi, take, cookie) };
     }
     let mut all: Vec<(String, String)> = Vec::new();
-    unsafe { libc::__system_property_foreach(each, (&mut all as *mut Vec<(String, String)>).cast()) };
+    unsafe {
+        libc::__system_property_foreach(each, (&mut all as *mut Vec<(String, String)>).cast())
+    };
     all.retain(|(name, _)| name.starts_with(prefix));
     all
 }
@@ -110,7 +129,10 @@ pub fn wait_prop(name: &str, value: &str, timeout: Duration) -> Result<()> {
             return Ok(());
         }
         if Instant::now() >= until {
-            bail!("{name} is {now:?} after {} ms, not {value:?}", timeout.as_millis());
+            bail!(
+                "{name} is {now:?} after {} ms, not {value:?}",
+                timeout.as_millis()
+            );
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -123,7 +145,11 @@ pub fn wait_file(path: &Path, timeout: Duration) -> Result<()> {
     let until = Instant::now() + timeout;
     while !path.exists() {
         if Instant::now() >= until {
-            bail!("{} is not there after {} ms", path.display(), timeout.as_millis());
+            bail!(
+                "{} is not there after {} ms",
+                path.display(),
+                timeout.as_millis()
+            );
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -140,8 +166,8 @@ pub enum Power {
     /// boots it.
     Fastboot,
     Bootloader,
-    /// Qualcomm emergency download mode.
-    Edl,
+    /// Samsung's download mode, where Odin writes an image.
+    Download,
     Off,
 }
 
@@ -152,7 +178,7 @@ impl Power {
             "recovery" => Power::Recovery,
             "fastboot" => Power::Fastboot,
             "bootloader" => Power::Bootloader,
-            "edl" => Power::Edl,
+            "download" => Power::Download,
             "off" => Power::Off,
             _ => return None,
         })
@@ -165,7 +191,7 @@ impl Power {
             Power::Recovery => "reboot,recovery",
             Power::Fastboot => "reboot,fastboot",
             Power::Bootloader => "reboot,bootloader",
-            Power::Edl => "reboot,edl",
+            Power::Download => "reboot,download",
             Power::Off => "shutdown,",
         }
     }
@@ -198,9 +224,16 @@ static RUNS_AGAIN: OnceLock<bool> = OnceLock::new();
 /// well, after what an earlier run left there.
 pub fn keep_log(path: &Path) -> Result<()> {
     let again = path.exists();
-    let file = OpenOptions::new().create(true).append(true).open(path).with_context(|| format!("open {}", path.display()))?;
-    KEPT.set(Mutex::new(file)).map_err(|_| anyhow!("the log is kept in a file already"))?;
-    RUNS_AGAIN.set(again).map_err(|_| anyhow!("the log is kept in a file already"))
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| format!("open {}", path.display()))?;
+    KEPT.set(Mutex::new(file))
+        .map_err(|_| anyhow!("the log is kept in a file already"))?;
+    RUNS_AGAIN
+        .set(again)
+        .map_err(|_| anyhow!("the log is kept in a file already"))
 }
 
 /// Whether the recovery service runs again since the phone started, as the
@@ -230,7 +263,10 @@ pub fn kmsg(text: &str) -> Result<()> {
     let kept = match KEPT.get() {
         Some(kept) => {
             let mut kept = kept.lock().expect("nothing panics while writing the log");
-            since_boot().and_then(|at| writeln!(kept, "[{:>12.6}] {text}", at.as_secs_f64()).with_context(|| format!("write {LOG}")))
+            since_boot().and_then(|at| {
+                writeln!(kept, "[{:>12.6}] {text}", at.as_secs_f64())
+                    .with_context(|| format!("write {LOG}"))
+            })
         }
         None => Ok(()),
     };
@@ -264,7 +300,10 @@ impl ToldOnce {
 
 /// What is written to the kernel log for `text`, a write for each record.
 fn written(text: &str) -> Vec<String> {
-    records(text, RECORD_MOST - RECORD_OPENS.len() - 1).into_iter().map(|record| format!("{RECORD_OPENS}{record}\n")).collect()
+    records(text, RECORD_MOST - RECORD_OPENS.len() - 1)
+        .into_iter()
+        .map(|record| format!("{RECORD_OPENS}{record}\n"))
+        .collect()
 }
 
 /// `text` as the records the kernel log takes it in: each of its lines,
@@ -293,9 +332,13 @@ fn records(text: &str, most: usize) -> Vec<&str> {
 /// How long the phone has been running, on the clock the kernel stamps its
 /// log with.
 fn since_boot() -> Result<Duration> {
-    let mut t = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut t = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut t) } != 0 {
-        return Err(std::io::Error::last_os_error()).context("read the time since the phone started");
+        return Err(std::io::Error::last_os_error())
+            .context("read the time since the phone started");
     }
     Ok(Duration::new(t.tv_sec as u64, t.tv_nsec as u32))
 }
@@ -308,7 +351,8 @@ pub fn kernel_log() -> Result<String> {
     const SIZE_BUFFER: libc::c_int = 10;
     let size = unsafe { libc::klogctl(SIZE_BUFFER, std::ptr::null_mut(), 0) };
     if size < 0 {
-        return Err(std::io::Error::last_os_error()).context("ask the kernel how much log it holds");
+        return Err(std::io::Error::last_os_error())
+            .context("ask the kernel how much log it holds");
     }
     let mut held = vec![0u8; size as usize];
     let n = unsafe { libc::klogctl(READ_ALL, held.as_mut_ptr().cast(), size) };
@@ -323,14 +367,17 @@ pub fn kernel_log() -> Result<String> {
 /// was written at.
 #[cfg(any(target_os = "android", test))]
 fn without_levels(log: &str) -> String {
-    log.lines().map(|line| line.strip_prefix('<').and_then(|l| l.split_once('>')).map_or(line, |(_, rest)| rest)).fold(
-        String::with_capacity(log.len()),
-        |mut out, line| {
+    log.lines()
+        .map(|line| {
+            line.strip_prefix('<')
+                .and_then(|l| l.split_once('>'))
+                .map_or(line, |(_, rest)| rest)
+        })
+        .fold(String::with_capacity(log.len()), |mut out, line| {
             out.push_str(line);
             out.push('\n');
             out
-        },
-    )
+        })
 }
 
 #[cfg(test)]
@@ -340,25 +387,53 @@ mod tests {
     #[test]
     fn kernel_log_lines_lose_their_levels() {
         let held = "<6>[    5.499346] skyward: ro.build.version.release is 16\n<3>[    6.1] dwc3 a600000.dwc3: a > b\nno level\n";
-        assert_eq!(without_levels(held), "[    5.499346] skyward: ro.build.version.release is 16\n[    6.1] dwc3 a600000.dwc3: a > b\nno level\n");
+        assert_eq!(
+            without_levels(held),
+            "[    5.499346] skyward: ro.build.version.release is 16\n[    6.1] dwc3 a600000.dwc3: a > b\nno level\n"
+        );
     }
 
     #[test]
     fn text_goes_to_the_kernel_log_a_record_for_each_line() {
         assert_eq!(records("erasing ended: done", 963), ["erasing ended: done"]);
-        assert_eq!(records("mkfs ended with 1:\nInfo: sector size = 4096\n\nError: device is busy\n", 963), ["mkfs ended with 1:", "Info: sector size = 4096", "", "Error: device is busy"]);
-        assert_eq!(records("", 963), [""], "a record still says that something was logged");
-        assert_eq!(written("the phone slept and woke"), ["<6>skyward: the phone slept and woke\n"]);
+        assert_eq!(
+            records(
+                "mkfs ended with 1:\nInfo: sector size = 4096\n\nError: device is busy\n",
+                963
+            ),
+            [
+                "mkfs ended with 1:",
+                "Info: sector size = 4096",
+                "",
+                "Error: device is busy"
+            ]
+        );
+        assert_eq!(
+            records("", 963),
+            [""],
+            "a record still says that something was logged"
+        );
+        assert_eq!(
+            written("the phone slept and woke"),
+            ["<6>skyward: the phone slept and woke\n"]
+        );
     }
 
     #[test]
     fn a_line_longer_than_a_record_is_several_cut_where_a_character_ends() {
         let line = "x".repeat(2000);
         let cut = records(&line, 963);
-        assert_eq!(cut.iter().map(|record| record.len()).collect::<Vec<_>>(), [963, 963, 74]);
+        assert_eq!(
+            cut.iter().map(|record| record.len()).collect::<Vec<_>>(),
+            [963, 963, 74]
+        );
         assert_eq!(cut.concat(), line);
         let exact = "y".repeat(963);
-        assert_eq!(records(&exact, 963), [exact.as_str()], "a line a record just holds is one");
+        assert_eq!(
+            records(&exact, 963),
+            [exact.as_str()],
+            "a line a record just holds is one"
+        );
         // Each of these characters takes three bytes.
         let wide = "擦除结束".repeat(3);
         let cut = records(&wide, 10);
@@ -371,14 +446,21 @@ mod tests {
     /// write, and goes in whole in writes the kernel takes.
     #[test]
     fn no_write_to_the_kernel_log_is_longer_than_the_kernel_takes() {
-        let said = format!("erasing ended: Format failed: /system/bin/make_f2fs ended with 1: {}\n{}", "Info: ".repeat(400), "错误：设备正忙。".repeat(200));
+        let said = format!(
+            "erasing ended: Format failed: /system/bin/make_f2fs ended with 1: {}\n{}",
+            "Info: ".repeat(400),
+            "错误：设备正忙。".repeat(200)
+        );
         let writes = written(&said);
         assert!(writes.len() > 2);
         for write in &writes {
             assert!(write.len() <= RECORD_MOST, "{} bytes", write.len());
             assert!(write.starts_with(RECORD_OPENS) && write.ends_with('\n'));
         }
-        let logged: String = writes.iter().map(|write| &write[RECORD_OPENS.len()..write.len() - 1]).collect();
+        let logged: String = writes
+            .iter()
+            .map(|write| &write[RECORD_OPENS.len()..write.len() - 1])
+            .collect();
         assert_eq!(logged, said.replace('\n', ""));
     }
 
@@ -387,10 +469,19 @@ mod tests {
         let mut told = ToldOnce::new();
         assert!(!told.untold(None), "nothing failed");
         assert!(told.untold(Some("read status: I/O error")));
-        assert!(!told.untold(Some("read status: I/O error")), "the same a second later");
-        assert!(told.untold(Some("read capacity: no data")), "another reason");
+        assert!(
+            !told.untold(Some("read status: I/O error")),
+            "the same a second later"
+        );
+        assert!(
+            told.untold(Some("read capacity: no data")),
+            "another reason"
+        );
         assert!(!told.untold(None), "it went well");
-        assert!(told.untold(Some("read capacity: no data")), "the same reason, after it went well in between");
+        assert!(
+            told.untold(Some("read capacity: no data")),
+            "the same reason, after it went well in between"
+        );
     }
 
     #[test]
@@ -415,9 +506,17 @@ mod tests {
         wait_file(&late, Duration::ZERO).unwrap();
         let missing = dir.join("missing");
         let began = Instant::now();
-        let said = wait_file(&missing, Duration::from_millis(50)).unwrap_err().to_string();
-        assert!(began.elapsed() >= Duration::from_millis(50), "it waited as long as it was given");
-        assert_eq!(said, format!("{} is not there after 50 ms", missing.display()));
+        let said = wait_file(&missing, Duration::from_millis(50))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            began.elapsed() >= Duration::from_millis(50),
+            "it waited as long as it was given"
+        );
+        assert_eq!(
+            said,
+            format!("{} is not there after 50 ms", missing.display())
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -428,12 +527,12 @@ mod tests {
             ("recovery", "reboot,recovery"),
             ("fastboot", "reboot,fastboot"),
             ("bootloader", "reboot,bootloader"),
-            ("edl", "reboot,edl"),
+            ("download", "reboot,download"),
             ("off", "shutdown,"),
         ] {
             assert_eq!(Power::parse(name).unwrap().command(), cmd);
         }
-        assert_eq!(Power::parse("download"), None);
+        assert_eq!(Power::parse("edl"), None);
     }
 
     #[test]
@@ -444,7 +543,11 @@ mod tests {
         for no in ["0", "n", "no", "off", "false"] {
             assert_eq!(yes_or_no(Some(no)), Some(false), "{no}");
         }
-        assert_eq!(yes_or_no(Some("True")), None, "the words are read as written");
+        assert_eq!(
+            yes_or_no(Some("True")),
+            None,
+            "the words are read as written"
+        );
         assert_eq!(yes_or_no(Some("")), None);
         assert_eq!(yes_or_no(None), None);
     }

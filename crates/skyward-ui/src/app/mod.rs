@@ -13,18 +13,20 @@ use crate::focus::{self, Group, Spot, Stop};
 use crate::font::Fonts;
 use crate::geom::Rect;
 use crate::glow::{self, GlowClock};
-use crate::lang::{same, Lang, Text};
+use crate::lang::{Lang, Text, same};
 use crate::motion::{self, Spring};
 use crate::pages::{self, Band, Ctx};
-use crate::sprite::{Blurs, Sprite};
 use crate::search;
 use crate::settings::Settings;
+use crate::sprite::{Blurs, Sprite};
 use crate::term::{self, Term, TermKey};
 use crate::texts;
 use crate::theme::Theme;
 use crate::widgets::{self, Bar, Bolt, Cap, Layer, WlanMark};
 use skyward_info::DeviceInfo;
-use skyward_install::{Event, ImageKind, Outcome, Place as FlashPlace, Reflash, Refusal, Stage, Target as FlashTarget};
+use skyward_install::{
+    Event, ImageKind, Outcome, Place as FlashPlace, Reflash, Refusal, Stage, Target as FlashTarget,
+};
 use skyward_net::download::{Failure, Progress};
 use skyward_net::github::{Build, Newest};
 use skyward_net::release::{Release, Unanswered};
@@ -88,8 +90,12 @@ pub enum Screen {
     Settings,
     Reboot,
     Wipe,
+    /// Formatting data after the word OrangeFox asks for.
+    WipeYes,
     /// Mounting and unmounting the slot's partitions.
     Mount,
+    /// One partition's filesystem, size, device and how it is mounted.
+    MountDetail,
     Install,
     /// A place's folders and the files in them that can be installed, to
     /// choose one.
@@ -105,10 +111,19 @@ pub enum Screen {
     /// keyboard.
     Search,
     Backup,
+    /// The passphrase a backup is encrypted with, typed on the screen's
+    /// keyboard.
+    BackupPassword,
     /// The backups found, to restore one.
     Restore,
     /// One backup, and what to restore from it.
     RestoreBackup,
+    /// The passphrase an encrypted backup is read with, typed on the
+    /// screen's keyboard.
+    RestorePassword,
+    /// A new name for the backup the restore page shows, typed on the
+    /// screen's keyboard.
+    RenameBackup,
     /// Backing up or restoring under way, and how it ended.
     BackupJob,
     /// Tools for the experienced: files, a terminal, the logs.
@@ -239,22 +254,45 @@ pub enum Action {
     Skip,
     /// Try opening the data partition again, after it did not open.
     OpenData,
+    /// Open the typed confirmation for formatting data.
+    WipeYesOpen,
+    /// Carry out the format the typed confirmation asks for.
+    WipeYes,
     Back,
-    Theme { dark: bool },
+    Theme {
+        dark: bool,
+    },
     Toggle(Switch),
     RebootTarget(usize),
     /// Choose or leave out what the wipe page erases.
     WipeItem(Wipe),
     /// A slider's track: touching or dragging it sets the slider's level.
     Slider(Slider),
+    /// Open the detail page of the mount page's partition at this index.
+    OpenMount(usize),
     /// Mount or unmount the mount page's partition at this index.
     MountToggle(usize),
+    /// Mount every partition that can be mounted.
+    MountAll,
+    /// Unmount every mounted partition.
+    UnmountAll,
+    /// Open the filesystem tools for the mount page's partition at this
+    /// index, so it can be made afresh on its own.
+    OpenMountFormat(usize),
     /// A swipe-to-confirm track; dragging the knob to the far end confirms.
     Confirm(Confirm),
     /// The pattern grid on the unlock page.
     Pattern,
     /// Start receiving a package over USB.
     Sideload,
+    /// Choose a ZIP from this place to add to the install queue.
+    QueueAdd(Place),
+    /// Take this waiting ZIP out of the queue.
+    QueueRemove(usize),
+    /// Start the queue's first ZIP.
+    QueueStart,
+    /// Take every waiting ZIP out of the queue.
+    QueueClear,
     /// Send the image to one of the partitions it fits.
     FlashPartition(usize),
     /// Send the image to these slots.
@@ -282,6 +320,8 @@ pub enum Action {
     OpenBackup(usize),
     /// Tick or untick a part of the backup being restored.
     RestorePart(usize),
+    /// Give the backup the restore page shows a new name.
+    RenameBackup,
     /// Stop backing up, or checking a backup before it is restored.
     StopBackup,
     /// Tick or untick a log to export: the recovery's, the kernel's.
@@ -430,9 +470,13 @@ pub enum Effect {
     /// screenshots in the owner's shared storage where `storage` says it is
     /// open, and otherwise held until it is, telling how it went with
     /// [`App::screenshot_saved`].
-    Screenshot { storage: bool },
+    Screenshot {
+        storage: bool,
+    },
     /// Offer internal storage to a computer over USB, or stop.
     FileTransfer(bool),
+    /// Let a computer reach adbd over WiFi, or stop.
+    WifiAdb(bool),
     /// Start receiving a package over USB.
     Sideload,
     /// Start installing the file at this path from the top of a place,
@@ -443,7 +487,11 @@ pub enum Effect {
     InstallPath(String),
     /// Write the image the installer holds to `partition`, which lies in
     /// `place`, in the slots `pick` means there.
-    Flash { partition: String, place: FlashPlace, pick: Pick },
+    Flash {
+        partition: String,
+        place: FlashPlace,
+        pick: Pick,
+    },
     /// Stop waiting for the computer, for where an image goes, or for an
     /// update to be agreed to.
     Cancel,
@@ -466,11 +514,17 @@ pub enum Effect {
     /// [`App::set_systems`] or [`App::systems_work_failed`].
     RemoveSystem,
     /// Install the system the installer holds with a root of `size` bytes.
-    InstallSystem { size: u64 },
+    InstallSystem {
+        size: u64,
+    },
     /// Mount the slot's partition with this base name, such as `system`.
     Mount(String),
     /// Unmount the slot's partition with this base name.
     Unmount(String),
+    /// Mount every partition the mount page lists that is not mounted.
+    MountAll,
+    /// Unmount every partition the mount page lists that is mounted.
+    UnmountAll,
     /// List the folder at this path for the file manager.
     ReadDir(String),
     /// List the folder at this path from the top of a place, to choose a
@@ -483,7 +537,10 @@ pub enum Effect {
     /// Open the own files of `user` with what they entered at their screen
     /// lock, telling what still waits with [`App::data_waiting`] or why it
     /// did not open with [`App::unlock_failed`].
-    Unlock { user: u32, code: String },
+    Unlock {
+        user: u32,
+        code: String,
+    },
     /// Hand the USB port back from fastboot to adb, bring up what the
     /// recovery runs from the slot's partitions, then show its pages with
     /// [`App::enter_recovery`].
@@ -512,13 +569,24 @@ pub enum Effect {
     TermInput(Vec<u8>),
     /// Copy or move an entry into a folder; with no choice made yet, a name
     /// taken there is told with [`App::file_clash`] instead of going on.
-    Paste { op: FileOp, path: String, into: String, clash: Option<ClashChoice> },
+    Paste {
+        op: FileOp,
+        path: String,
+        into: String,
+        clash: Option<ClashChoice>,
+    },
     /// Give an entry a new name; how it went comes back with
     /// [`App::renamed`].
-    Rename { path: String, name: String },
+    Rename {
+        path: String,
+        name: String,
+    },
     /// Give an entry these permission bits; how it went comes back with
     /// [`App::mode_set`].
-    SetMode { path: String, mode: u32 },
+    SetMode {
+        path: String,
+        mode: u32,
+    },
     /// Read the file at this path to edit it, as much as
     /// [`editor::MAX_BYTES`] and one byte more, telling what it holds with
     /// [`App::text_opened`].
@@ -526,7 +594,10 @@ pub enum Effect {
     /// Write `text` as the contents of the file at `path`, which keeps what
     /// it has beside them; how it went comes back with
     /// [`App::text_saved`].
-    SaveText { path: String, text: String },
+    SaveText {
+        path: String,
+        text: String,
+    },
     /// Delete an entry, folders whole.
     Delete(String),
     /// Stop the work on files under way.
@@ -546,25 +617,56 @@ pub enum Effect {
     /// [`App::part_at`], [`App::part_ended`] and [`App::part_work_ended`];
     /// making the data partition afresh as another filesystem is a factory
     /// reset, which tells as erasing tells.
-    Filesystem { name: String, action: FsAction },
+    Filesystem {
+        name: String,
+        action: FsAction,
+    },
     /// Save the logs chosen, the recovery's own and the kernel's, into a
     /// folder of their own in internal storage or the temporary folder,
     /// saying where with [`App::report`].
-    ExportLogs { recovery: bool, kernel: bool, storage: bool },
+    ExportLogs {
+        recovery: bool,
+        kernel: bool,
+        storage: bool,
+    },
     /// Back up the parts ticked, by their place in [`BACKUP_PARTS`], into
     /// a folder of their own in `place`, telling how it goes with
     /// [`App::backup_started`], [`App::backup_plan`], [`App::backup_at`]
     /// and [`App::backup_ended`].
-    Backup { parts: [bool; 5], place: Place, compress: bool, verify: bool },
+    Backup {
+        parts: [bool; 6],
+        place: Place,
+        compress: bool,
+        verify: bool,
+        password: Option<Secret>,
+    },
     /// Restore the parts ticked of the backup in the folder `name` of
     /// `place`, telling how it goes as a backup does.
-    Restore { place: Place, name: String, parts: [bool; 5] },
+    Restore {
+        place: Place,
+        name: String,
+        parts: [bool; 6],
+        password: Option<Secret>,
+    },
     /// Look for backups in the places that can be read, telling what is
     /// found with [`App::set_backups`].
-    FindBackups { storage: bool, usb: bool },
+    FindBackups {
+        storage: bool,
+        usb: bool,
+    },
     /// Delete the backup in the folder `name` of `place`, telling how it
     /// went with [`App::backup_deleted`].
-    DeleteBackup { place: Place, name: String },
+    DeleteBackup {
+        place: Place,
+        name: String,
+    },
+    /// Give the backup in the folder `from` of `place` the name `to`,
+    /// telling how it went with [`App::backup_renamed`].
+    RenameBackup {
+        place: Place,
+        from: String,
+        to: String,
+    },
     /// Stop the backup under way, or the check before a restore.
     StopBackup,
     /// Read where the update stands, telling it with [`App::set_update`].
@@ -573,7 +675,12 @@ pub enum Effect {
     /// [`App::set_wlan`].
     Wlan(bool),
     ScanWlan,
-    JoinWlan { ssid: Vec<u8>, name: String, security: Security, password: Secret },
+    JoinWlan {
+        ssid: Vec<u8>,
+        name: String,
+        security: Security,
+        password: Secret,
+    },
     LeaveWlan,
     /// Ask the update server for the newest system, telling what it
     /// answered with [`App::update_checked`].
@@ -601,20 +708,42 @@ enum Drag {
     /// press began at a screen edge (true for the left one).
     /// `at` is when it came down: held long enough over an entry of the file
     /// manager, it opens what can be done with that entry.
-    Press { x: f32, y: f32, action: Option<Action>, edge: Option<bool>, at: u64 },
+    Press {
+        x: f32,
+        y: f32,
+        action: Option<Action>,
+        edge: Option<bool>,
+        at: u64,
+    },
     /// A press held long enough to have done its work; nothing it does
     /// counts until it lifts.
     Held,
-    Scroll { last: f32 },
+    Scroll {
+        last: f32,
+    },
     /// Swiping in from a screen edge, the finger now `x` across; the cue
     /// keeps to height `cy`, set by where the swipe began. Past the
     /// threshold, lifting goes back.
-    Edge { start: f32, from_left: bool, armed: bool, x: f32, cy: f32 },
+    Edge {
+        start: f32,
+        from_left: bool,
+        armed: bool,
+        x: f32,
+        cy: f32,
+    },
     Slider(Slider, Rect),
-    Confirm { which: Confirm, track: Rect, grab: f32 },
+    Confirm {
+        which: Confirm,
+        track: Rect,
+        grab: f32,
+    },
     /// Scrolling a terminal's screen back through what the shell wrote, or
     /// the editor's text, `carry` being the part of a row not yet scrolled.
-    History { last: f32, carry: f32, pitch: f32 },
+    History {
+        last: f32,
+        carry: f32,
+        pitch: f32,
+    },
     Pattern,
     /// A finger that landed just after the panel lit; nothing it does
     /// counts until it lifts.
@@ -646,7 +775,11 @@ enum Press {
     /// The power key on a swipe-to-confirm control, whose knob slides along
     /// its track at `track` from `at` while the key is held; let go once
     /// it has slid far enough, the control confirms.
-    Slide { which: Confirm, track: Rect, at: u64 },
+    Slide {
+        which: Confirm,
+        track: Rect,
+        at: u64,
+    },
     /// Done with: nothing more comes of it until it is let go.
     Spent,
 }
@@ -833,16 +966,32 @@ struct Fade {
 
 impl Fade {
     fn hidden(show: Ease, hide: Ease) -> Fade {
-        Fade { on: false, since: 0, from: 0.0, show, hide }
+        Fade {
+            on: false,
+            since: 0,
+            from: 0.0,
+            show,
+            hide,
+        }
     }
 
     fn shown(show: Ease, hide: Ease) -> Fade {
-        Fade { on: true, since: 0, from: 1.0, show, hide }
+        Fade {
+            on: true,
+            since: 0,
+            from: 1.0,
+            show,
+            hide,
+        }
     }
 
     /// How far in, 0 to 1, at `now`.
     fn level(&self, now: u64) -> f32 {
-        let (target, ease) = if self.on { (1.0, self.show) } else { (0.0, self.hide) };
+        let (target, ease) = if self.on {
+            (1.0, self.show)
+        } else {
+            (0.0, self.hide)
+        };
         self.from + (target - self.from) * ease.progress(now.saturating_sub(self.since))
     }
 
@@ -893,7 +1042,9 @@ fn full_brightness() -> Fade {
 /// The level the panel dims to shortly before it goes off, for the
 /// brightness set.
 fn dim_level(full: f32) -> f32 {
-    (full - DIM_DROP).clamp(MIN_BRIGHTNESS, DIM_CEILING).min(full)
+    (full - DIM_DROP)
+        .clamp(MIN_BRIGHTNESS, DIM_CEILING)
+        .min(full)
 }
 
 /// How long the panel stays dim before going off, for a screen-off time.
@@ -914,7 +1065,15 @@ fn within(r: Rect, (top, bottom): (f32, f32)) -> bool {
 
 /// Lay the sprite `blurs` keeps, moved by (`dx`, `dy`), in `color` at
 /// `level` of its strength, blurred by `blur` pixels.
-fn draw_faded(out: &mut Canvas, blurs: &mut Blurs, dx: f32, dy: f32, color: Rgba, level: f32, blur: f32) {
+fn draw_faded(
+    out: &mut Canvas,
+    blurs: &mut Blurs,
+    dx: f32,
+    dy: f32,
+    color: Rgba,
+    level: f32,
+    blur: f32,
+) {
     if level > 0.0 {
         blurs.get(blur).draw(out, dx, dy, color, level);
     }
@@ -972,19 +1131,24 @@ impl RowPress {
         }
         let up = |t: u64| motion::settle(t - self.rise, ROW_PRESS_PERIOD);
         match self.fall {
-            Some(fall) if now >= fall => up(fall) * (1.0 - motion::settle(now - fall, ROW_PRESS_PERIOD)),
+            Some(fall) if now >= fall => {
+                up(fall) * (1.0 - motion::settle(now - fall, ROW_PRESS_PERIOD))
+            }
             _ => up(now),
         }
     }
 
     /// Whether it has faded back after being let go.
     fn gone(&self, now: u64) -> bool {
-        self.fall.is_some_and(|fall| now >= fall && motion::settle(now - fall, ROW_PRESS_PERIOD) == 1.0)
+        self.fall
+            .is_some_and(|fall| now >= fall && motion::settle(now - fall, ROW_PRESS_PERIOD) == 1.0)
     }
 
     /// Whether it is darkening or fading back at `now`.
     fn changing(&self, now: u64) -> bool {
-        let dark = self.fall.is_none() && now >= self.rise && motion::settle(now - self.rise, ROW_PRESS_PERIOD) == 1.0;
+        let dark = self.fall.is_none()
+            && now >= self.rise
+            && motion::settle(now - self.rise, ROW_PRESS_PERIOD) == 1.0;
         now >= self.rise && !dark && !self.gone(now)
     }
 
@@ -1044,7 +1208,10 @@ fn row_wide(t: &Theme, r: Rect) -> bool {
 /// left, top, width and height.
 fn row_part(r: Rect, canvas: &Canvas) -> (u32, u32, u32, u32) {
     let (x0, y0) = (r.x.floor().max(0.0) as u32, r.y.floor().max(0.0) as u32);
-    let (x1, y1) = (((r.x + r.w).ceil() as u32).min(canvas.w), ((r.y + r.h).ceil() as u32).min(canvas.h));
+    let (x1, y1) = (
+        ((r.x + r.w).ceil() as u32).min(canvas.w),
+        ((r.y + r.h).ceil() as u32).min(canvas.h),
+    );
     (x0, y0, x1 - x0, y1 - y0)
 }
 
@@ -1285,11 +1452,15 @@ impl App {
     }
 
     fn top(&self) -> &(Screen, f32, Focus) {
-        self.stack.last().expect("the page stack always holds a page")
+        self.stack
+            .last()
+            .expect("the page stack always holds a page")
     }
 
     fn top_mut(&mut self) -> &mut (Screen, f32, Focus) {
-        self.stack.last_mut().expect("the page stack always holds a page")
+        self.stack
+            .last_mut()
+            .expect("the page stack always holds a page")
     }
 
     /// Whether the panel needs a new frame since the last call.
@@ -1302,7 +1473,8 @@ impl App {
     /// backlight eases, else when a shown message should disappear or the
     /// panel should dim or go off.
     pub fn deadline(&self, now: u64) -> Option<u64> {
-        let sliding = matches!(self.button, Some((_, Press::Slide { .. }))) && self.state.confirm < 1.0;
+        let sliding =
+            matches!(self.button, Some((_, Press::Slide { .. }))) && self.state.confirm < 1.0;
         let moving = self.display_on
             && (self.fling.is_some()
                 || self.glide.is_some()
@@ -1314,7 +1486,9 @@ impl App {
                 || self.bar.moving(now)
                 || self.morph.is_some()
                 || self.turn.is_some()
-                || self.row_press.is_some_and(|p| p.changing(now) || p.gone(now))
+                || self
+                    .row_press
+                    .is_some_and(|p| p.changing(now) || p.gone(now))
                 || self.glowing());
         // The content going dark or coming up, and the charging screen's
         // tide, move a frame at a time while the panel is lit.
@@ -1325,17 +1499,46 @@ impl App {
         let darkens = self.row_press.map(|p| p.rise).filter(|&rise| rise > now);
         let easing = self.bright.moving(now).then_some(now + BACKLIGHT_STEP_MS);
         let held = match self.drag {
-            Drag::Press { action: Some(Action::OpenEntry(_)), at, .. } => Some(at + LONG_PRESS_MS),
+            Drag::Press {
+                action: Some(Action::OpenEntry(_)),
+                at,
+                ..
+            } => Some(at + LONG_PRESS_MS),
             _ => None,
         };
         let repeat = match self.button {
             Some((_, Press::Volume { next, .. })) => Some(next),
-            Some((_, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(_)), .. }, at })) => Some(at + LONG_PRESS_MS),
+            Some((
+                _,
+                Press::Power {
+                    spot:
+                        Spot {
+                            stop: Stop::Hit(Action::OpenEntry(_)),
+                            ..
+                        },
+                    at,
+                },
+            )) => Some(at + LONG_PRESS_MS),
             _ => None,
         };
-        let blink = self.blink_at(now).filter(|_| self.display_on).map(|(_, next)| next);
+        let blink = self
+            .blink_at(now)
+            .filter(|_| self.display_on)
+            .map(|(_, next)| next);
         let chord = self.chord.map(|(_, at)| at + CHORD_MS);
-        [self.toast.as_ref().map(|t| t.1), easing, self.idle_due(), held, repeat, blink, darkens, chord].into_iter().flatten().min()
+        [
+            self.toast.as_ref().map(|t| t.1),
+            easing,
+            self.idle_due(),
+            held,
+            repeat,
+            blink,
+            darkens,
+            chord,
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     /// Whether a text field's cursor shows at `now`, and when it next turns;
@@ -1353,7 +1556,11 @@ impl App {
         if !self.display_on {
             return None;
         }
-        Some(if self.bright.on { active + after - dim_span(after) } else { active + after })
+        Some(if self.bright.on {
+            active + after - dim_span(after)
+        } else {
+            active + after
+        })
     }
 
     /// Let time pass: the panel dims and goes off once left alone long
@@ -1370,13 +1577,27 @@ impl App {
         // An entry of the file manager held long enough, under a finger or
         // the power key, opens what can be done with it, a folder as much as
         // a file, with a tap of the motor.
-        if let Drag::Press { action: Some(Action::OpenEntry(i)), at, .. } = self.drag
+        if let Drag::Press {
+            action: Some(Action::OpenEntry(i)),
+            at,
+            ..
+        } = self.drag
             && now >= at + LONG_PRESS_MS
         {
             self.drag = Drag::Held;
             fx.extend(self.held_entry(i));
         }
-        if let Some((key, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(i)), .. }, at })) = self.button
+        if let Some((
+            key,
+            Press::Power {
+                spot:
+                    Spot {
+                        stop: Stop::Hit(Action::OpenEntry(i)),
+                        ..
+                    },
+                at,
+            },
+        )) = self.button
             && now >= at + LONG_PRESS_MS
         {
             self.button = Some((key, Press::Spent));
@@ -1393,7 +1614,12 @@ impl App {
         }
         // The charging screen goes once it has shown long enough: on a
         // panel lit for it, with the panel, else for the page.
-        if self.display_on && self.charging.as_ref().is_some_and(|c| c.shown.on && now >= c.since + CHARGE_MS) {
+        if self.display_on
+            && self
+                .charging
+                .as_ref()
+                .is_some_and(|c| c.shown.on && now >= c.since + CHARGE_MS)
+        {
             let c = self.charging.as_mut().expect("the charging screen shows");
             if c.dark_after {
                 self.sleep(now);
@@ -1401,7 +1627,11 @@ impl App {
                 c.shown.set(false, now);
             }
         }
-        if self.charging.as_ref().is_some_and(|c| !c.shown.on && !c.shown.moving(now)) {
+        if self
+            .charging
+            .as_ref()
+            .is_some_and(|c| !c.shown.on && !c.shown.moving(now))
+        {
             self.end_charging();
         }
         // Once the content is dark, the panel is off, and what showed goes
@@ -1417,7 +1647,12 @@ impl App {
             self.toast = None;
             self.dirty = true;
         }
-        if self.blink_at(now).is_some_and(|(on, _)| on != self.caret_shown) || self.morph.is_some() || self.turn.is_some() {
+        if self
+            .blink_at(now)
+            .is_some_and(|(on, _)| on != self.caret_shown)
+            || self.morph.is_some()
+            || self.turn.is_some()
+        {
             self.dirty = true;
         }
         if let Some(p) = self.row_press {
@@ -1441,7 +1676,11 @@ impl App {
                 // The glide ran into an end: the speed it had left throws
                 // the page past it, and it springs back.
                 let speed = fling.velocity(now);
-                let period = if speed.abs() <= self.theme().m.dp(HARD_BOUNCE_DP) { 0.4 } else { 0.55 };
+                let period = if speed.abs() <= self.theme().m.dp(HARD_BOUNCE_DP) {
+                    0.4
+                } else {
+                    0.55
+                };
                 self.bounce = Some(Spring::new(now, 0.0, speed, period));
                 self.fling = None;
             } else if done {
@@ -1455,7 +1694,11 @@ impl App {
             if rows != scrolled {
                 self.scroll_rows(rows - scrolled);
             }
-            self.glide = if done { None } else { Some((glide, pitch, rows)) };
+            self.glide = if done {
+                None
+            } else {
+                Some((glide, pitch, rows))
+            };
         }
         if let Some(b) = self.bounce {
             self.dirty = true;
@@ -1465,7 +1708,11 @@ impl App {
         }
         if let Some((target, spring)) = self.seek {
             let (off, done) = spring.at(now);
-            let at = if done { target } else { (target + off).clamp(0.0, self.max_scroll()) };
+            let at = if done {
+                target
+            } else {
+                (target + off).clamp(0.0, self.max_scroll())
+            };
             let top = self.top_mut();
             if top.1 != at {
                 top.1 = at;
@@ -1490,7 +1737,13 @@ impl App {
             && now >= next
             && self.frame.is_some()
         {
-            self.button = Some((key, Press::Volume { down, next: now + REPEAT_MS }));
+            self.button = Some((
+                key,
+                Press::Volume {
+                    down,
+                    next: now + REPEAT_MS,
+                },
+            ));
             fx.extend(self.volume(down, now));
         }
         if let Some((_, _, s)) = self.cue {
@@ -1531,13 +1784,18 @@ impl App {
             (gone, gone)
         } else {
             let under = (fr.content_top - widgets::bar_bottom(&t) - t.m.dp(20.0)).max(0.0);
-            (fr.header && fr.title_lift(scroll) >= t.m.dp(TITLE_FADE_DP), scroll > under)
+            (
+                fr.header && fr.title_lift(scroll) >= t.m.dp(TITLE_FADE_DP),
+                scroll > under,
+            )
         })
     }
 
     /// Bring the bar and its title in or out as the page scrolls.
     fn follow_scroll(&mut self, now: u64) {
-        let Some((title, bar)) = self.bar_wanted() else { return };
+        let Some((title, bar)) = self.bar_wanted() else {
+            return;
+        };
         self.title.set(title, now);
         self.bar.set(bar, now);
         if self.title.moving(now) || self.bar.moving(now) {

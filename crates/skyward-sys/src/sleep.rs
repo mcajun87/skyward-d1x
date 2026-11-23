@@ -60,7 +60,13 @@ impl Sleeper {
     pub fn start() -> Result<Sleeper> {
         fs::write(MEM_SLEEP, "s2idle").with_context(|| format!("write s2idle to {MEM_SLEEP}"))?;
         let (tell, told) = worker::telling().context("make the sleeper's wake pipe")?;
-        let leave = Arc::new((Mutex::new(Leave { allowed: false, not_before: Instant::now() }), Condvar::new()));
+        let leave = Arc::new((
+            Mutex::new(Leave {
+                allowed: false,
+                not_before: Instant::now(),
+            }),
+            Condvar::new(),
+        ));
         let shared = leave.clone();
         thread::Builder::new()
             .name("sleeper".into())
@@ -69,20 +75,34 @@ impl Sleeper {
                 loop {
                     let (lock, cvar) = &*shared;
                     {
-                        let mut l = lock.lock().expect("the sleeper's leave is not held by a thread that panicked");
+                        let mut l = lock
+                            .lock()
+                            .expect("the sleeper's leave is not held by a thread that panicked");
                         while !l.allowed || Instant::now() < l.not_before {
                             l = if l.allowed {
                                 let left = l.not_before.saturating_duration_since(Instant::now());
-                                cvar.wait_timeout(l, left).expect("the sleeper's leave is not held by a thread that panicked").0
+                                cvar.wait_timeout(l, left)
+                                    .expect(
+                                        "the sleeper's leave is not held by a thread that panicked",
+                                    )
+                                    .0
                             } else {
-                                cvar.wait(l).expect("the sleeper's leave is not held by a thread that panicked")
+                                cvar.wait(l).expect(
+                                    "the sleeper's leave is not held by a thread that panicked",
+                                )
                             };
                         }
                     }
-                    let slept = sleep(|| lock.lock().expect("the sleeper's leave is not held by a thread that panicked").allowed);
+                    let slept = sleep(|| {
+                        lock.lock()
+                            .expect("the sleeper's leave is not held by a thread that panicked")
+                            .allowed
+                    });
                     let Some(slept) = slept else { continue };
                     {
-                        let mut l = lock.lock().expect("the sleeper's leave is not held by a thread that panicked");
+                        let mut l = lock
+                            .lock()
+                            .expect("the sleeper's leave is not held by a thread that panicked");
                         l.allowed = false;
                         match &slept {
                             Slept::Woke => retry = RETRY_FIRST,
@@ -110,7 +130,9 @@ impl Sleeper {
     /// soon as the kernel will, and after the sleep waits to be let again.
     pub fn allow(&self, allowed: bool) {
         let (lock, cvar) = &*self.leave;
-        let mut l = lock.lock().expect("the sleeper's leave is not held by a thread that panicked");
+        let mut l = lock
+            .lock()
+            .expect("the sleeper's leave is not held by a thread that panicked");
         if l.allowed != allowed {
             l.allowed = allowed;
             cvar.notify_one();
@@ -138,13 +160,20 @@ impl Wakeful {
         if fd < 0 {
             return Err(io::Error::last_os_error()).context("make an epoll set");
         }
-        Ok(Wakeful { epoll: unsafe { OwnedFd::from_raw_fd(fd) } })
+        Ok(Wakeful {
+            epoll: unsafe { OwnedFd::from_raw_fd(fd) },
+        })
     }
 
     /// Follow `fd` until it is closed.
     pub fn add(&self, fd: RawFd) -> Result<()> {
-        let mut event = libc::epoll_event { events: (libc::EPOLLIN | libc::EPOLLWAKEUP) as u32, u64: fd as u64 };
-        if unsafe { libc::epoll_ctl(self.epoll.as_raw_fd(), libc::EPOLL_CTL_ADD, fd, &mut event) } != 0 {
+        let mut event = libc::epoll_event {
+            events: (libc::EPOLLIN | libc::EPOLLWAKEUP) as u32,
+            u64: fd as u64,
+        };
+        if unsafe { libc::epoll_ctl(self.epoll.as_raw_fd(), libc::EPOLL_CTL_ADD, fd, &mut event) }
+            != 0
+        {
             return Err(io::Error::last_os_error()).context("follow a file in the epoll set");
         }
         Ok(())
@@ -169,7 +198,9 @@ fn sleep(allowed: impl Fn() -> bool) -> Option<Slept> {
         return None;
     }
     if let Err(e) = fs::write(WAKEUP_COUNT, count.trim()) {
-        return Some(Slept::Refused(format!("a wakeup event came as the phone was to sleep: {e}")));
+        return Some(Slept::Refused(format!(
+            "a wakeup event came as the phone was to sleep: {e}"
+        )));
     }
     Some(match fs::write(STATE, "mem") {
         Ok(()) => Slept::Woke,

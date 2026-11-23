@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,9 +33,9 @@ pub fn load(dirs: &[PathBuf], names: &[String]) -> Result<Vec<PathBuf>> {
             .ok_or_else(|| anyhow!("{file} is in none of {dirs:?}"))?;
         let graph = parse_dep(dir)?;
         for m in graph.load_order(std::slice::from_ref(&file)) {
-            let path = graph
-                .resolve_path(&m)
-                .ok_or_else(|| anyhow!("{m} is listed in {}/modules.dep but missing", dir.display()))?;
+            let path = graph.resolve_path(&m).ok_or_else(|| {
+                anyhow!("{m} is listed in {}/modules.dep but missing", dir.display())
+            })?;
             insmod(&path, "")?;
             loaded.push(path);
         }
@@ -56,8 +56,8 @@ pub struct ModuleGraph {
 pub fn parse_dep(base: impl AsRef<Path>) -> Result<ModuleGraph> {
     let base = base.as_ref().to_path_buf();
     let dep_path = base.join("modules.dep");
-    let text = fs::read_to_string(&dep_path)
-        .with_context(|| format!("read {}", dep_path.display()))?;
+    let text =
+        fs::read_to_string(&dep_path).with_context(|| format!("read {}", dep_path.display()))?;
     let mut deps = BTreeMap::new();
     for line in text.lines() {
         let line = line.trim();
@@ -139,8 +139,16 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
 #[cfg(target_os = "android")]
 fn finit_module(file: &fs::File, params: &str) -> std::io::Result<()> {
     use std::os::unix::io::AsRawFd;
-    let params = std::ffi::CString::new(params).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
-    let rc = unsafe { libc::syscall(libc::SYS_finit_module, file.as_raw_fd(), params.as_ptr(), 0 as libc::c_int) };
+    let params = std::ffi::CString::new(params)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_finit_module,
+            file.as_raw_fd(),
+            params.as_ptr(),
+            0 as libc::c_int,
+        )
+    };
     if rc != 0 {
         return Err(std::io::Error::last_os_error());
     }
@@ -149,7 +157,10 @@ fn finit_module(file: &fs::File, params: &str) -> std::io::Result<()> {
 
 #[cfg(not(target_os = "android"))]
 fn finit_module(_file: &fs::File, _params: &str) -> std::io::Result<()> {
-    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "modules are loaded only on the phone"))
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "modules are loaded only on the phone",
+    ))
 }
 
 pub fn insmod(path: impl AsRef<Path>, params: &str) -> Result<()> {
@@ -173,7 +184,10 @@ mod tests {
         deps.insert("a.ko".to_string(), vec!["b.ko".to_string()]);
         deps.insert("b.ko".to_string(), vec!["c.ko".to_string()]);
         deps.insert("c.ko".to_string(), vec![]);
-        let g = ModuleGraph { base: PathBuf::new(), deps };
+        let g = ModuleGraph {
+            base: PathBuf::new(),
+            deps,
+        };
         let order = g.load_order(&["a.ko".to_string()]);
         assert_eq!(order, vec!["c.ko", "b.ko", "a.ko"]);
     }

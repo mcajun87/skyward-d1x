@@ -19,7 +19,10 @@ pub(super) fn info() -> DeviceInfo {
         model: "Xiaomi 13 Ultra".into(),
         codename: "ishtar".into(),
         soc: None,
-        cpu: Cpu { cores: 8, max_khz: Some(3_187_200) },
+        cpu: Cpu {
+            cores: 8,
+            max_khz: Some(3_187_200),
+        },
         ram_kib: 15_556_972,
         panel: Some((W, H)),
         screen: Some(6.73),
@@ -29,11 +32,17 @@ pub(super) fn info() -> DeviceInfo {
         time_zone: None,
         security_patch: None,
         kernel: "5.15.178".into(),
-        storage: Storage { total: 496_550_785_024, free: None },
+        storage: Storage {
+            total: 496_550_785_024,
+            free: None,
+        },
         battery: None,
         slot: None,
         snapshot: SnapshotState::None,
-        boot: Boot { unlocked: None, verified: None },
+        boot: Boot {
+            unlocked: None,
+            verified: None,
+        },
     }
 }
 
@@ -61,7 +70,9 @@ pub(super) fn spot(app: &mut App, f: &Fonts, i: &DeviceInfo, action: Action) -> 
     }
     let rows = fr.rows.as_ref().expect("control on the page");
     let answer = rows.action.expect("control on the page");
-    let k = (0..rows.count()).find(|&k| answer(k) == action).expect("control on the page");
+    let k = (0..rows.count())
+        .find(|&k| answer(k) == action)
+        .expect("control on the page");
     let (x, y) = rows.rect(k, fr.canvas.w as f32).centre();
     (x, y - scroll)
 }
@@ -70,7 +81,13 @@ pub(super) fn tap(app: &mut App, f: &Fonts, i: &DeviceInfo, action: Action) -> V
     tap_at(app, f, i, action, 0)
 }
 
-pub(super) fn tap_at(app: &mut App, f: &Fonts, i: &DeviceInfo, action: Action, now: u64) -> Vec<Effect> {
+pub(super) fn tap_at(
+    app: &mut App,
+    f: &Fonts,
+    i: &DeviceInfo,
+    action: Action,
+    now: u64,
+) -> Vec<Effect> {
     let (x, y) = spot(app, f, i, action);
     let mut fx = app.touch(Touch::Down(x, y), f, now);
     fx.extend(app.touch(Touch::Up, f, now));
@@ -106,7 +123,19 @@ pub(super) fn opened(screen: Screen, f: &Fonts, i: &DeviceInfo) -> App {
 /// unless it discharges.
 pub(super) fn battery_at(level: u8, charge: Charge) -> skyward_info::Battery {
     let plugged = charge != Charge::Discharging;
-    skyward_info::Battery { level, charge, temp: Some(352), health: None, cycles: None, design: None, full: None, voltage: None, quick: false, plugged }
+    skyward_info::Battery {
+        level,
+        charge,
+        temp: Some(352),
+        health: None,
+        cycles: None,
+        design: None,
+        rated: None,
+        full: None,
+        voltage: None,
+        quick: false,
+        plugged,
+    }
 }
 
 /// The grey of the screen's pixel at (`x`, `y`).
@@ -116,8 +145,16 @@ pub(super) fn grey_at(c: &Canvas, x: f32, y: f32) -> u8 {
 
 /// The darkest grey of the screen within `r`.
 pub(super) fn darkest(c: &Canvas, r: Rect) -> u8 {
-    let (x0, y0, x1, y1) = (r.x as u32, r.y as u32, (r.x + r.w) as u32, (r.y + r.h) as u32);
-    (y0..y1).flat_map(|y| (x0..x1).map(move |x| c.data[((y * c.w + x) * 4) as usize])).min().expect("a part of the screen")
+    let (x0, y0, x1, y1) = (
+        r.x as u32,
+        r.y as u32,
+        (r.x + r.w) as u32,
+        (r.y + r.h) as u32,
+    );
+    (y0..y1)
+        .flat_map(|y| (x0..x1).map(move |x| c.data[((y * c.w + x) * 4) as usize]))
+        .min()
+        .expect("a part of the screen")
 }
 
 /// A copy of the screen.
@@ -129,7 +166,12 @@ pub(super) fn shot(c: &Canvas) -> Canvas {
 /// where the page in front stands, how far left the page behind is, and
 /// how much of its light the page behind keeps, in 256ths.
 pub(super) fn slid(back: bool, ms: u64) -> (u32, u32, u32) {
-    let (x, _) = if back { Spring::new(0, -1000.0, 0.0, BACK_PERIOD) } else { Spring::new(0, 1000.0, -OPEN_SPEED * 1000.0, OPEN_PERIOD) }.at(ms);
+    let (x, _) = if back {
+        Spring::new(0, -1000.0, 0.0, BACK_PERIOD)
+    } else {
+        Spring::new(0, 1000.0, -OPEN_SPEED * 1000.0, OPEN_PERIOD)
+    }
+    .at(ms);
     let along = if back { 1.0 + x / 1000.0 } else { x / 1000.0 };
     let front = (along * W as f32).round() as u32;
     let behind = (BEHIND_SHIFT * W as f32 * (1.0 - along)).round() as u32;
@@ -140,12 +182,25 @@ pub(super) fn slid(back: bool, ms: u64) -> (u32, u32, u32) {
 /// Check row `y` of `mid`: the page `ahead` from `front` on, and left of
 /// it the page `under`, `behind` pixels left of rest and keeping `keep`
 /// 256ths of its light.
-pub(super) fn check_slide(mid: &Canvas, ahead: &Canvas, under: &Canvas, y: u32, (front, behind, keep): (u32, u32, u32)) {
+pub(super) fn check_slide(
+    mid: &Canvas,
+    ahead: &Canvas,
+    under: &Canvas,
+    y: u32,
+    (front, behind, keep): (u32, u32, u32),
+) {
     for x in 0..W {
         let at = |c: &Canvas, x: u32| c.data[((y * W + x) * 4) as usize] as u32;
-        let want = if x >= front { at(ahead, x - front) } else { (at(under, x + behind) * keep) >> 8 };
+        let want = if x >= front {
+            at(ahead, x - front)
+        } else {
+            (at(under, x + behind) * keep) >> 8
+        };
         let got = at(mid, x);
-        assert!(got.abs_diff(want) <= 1, "column {x} of row {y}: {got}, not {want} (front {front}, behind {behind})");
+        assert!(
+            got.abs_diff(want) <= 1,
+            "column {x} of row {y}: {got}, not {want} (front {front}, behind {behind})"
+        );
     }
 }
 
@@ -155,7 +210,11 @@ pub(super) fn check_slide(mid: &Canvas, ahead: &Canvas, under: &Canvas, y: u32, 
 pub(super) fn flick(app: &mut App, f: &Fonts, start: u64, step: f32) -> u64 {
     app.touch(Touch::Down(700.0, 2400.0), f, start);
     for k in 1..=5u64 {
-        app.touch(Touch::Move(700.0, 2400.0 - step * k as f32), f, start + 8 * k);
+        app.touch(
+            Touch::Move(700.0, 2400.0 - step * k as f32),
+            f,
+            start + 8 * k,
+        );
     }
     let lift = start + 48;
     app.touch(Touch::Up, f, lift);
@@ -184,7 +243,10 @@ pub(super) const SNUG: u32 = 3000;
 /// installer started and waiting for the computer.
 pub(super) fn sideloading(f: &Fonts, i: &DeviceInfo) -> App {
     let mut app = opened(Screen::Install, f, i);
-    assert_eq!(tap(&mut app, f, i, Action::Sideload), vec![Effect::Sideload]);
+    assert_eq!(
+        tap(&mut app, f, i, Action::Sideload),
+        vec![Effect::Sideload]
+    );
     assert_eq!(app.screen(), Screen::Installing);
     assert_eq!(app.state.install, Install::Starting);
     app.install(Event::Waiting, 0);
@@ -217,7 +279,13 @@ pub(super) fn light_on(app: &mut App, f: &Fonts, i: &DeviceInfo, stop: Stop) {
 
 /// Drag the knob of a swipe-to-confirm track all the way across.
 pub(super) fn swipe(app: &mut App, f: &Fonts, i: &DeviceInfo, which: Confirm) -> Vec<Effect> {
-    let track = app.frame(f, i).hits.iter().find(|h| h.action == Action::Confirm(which)).expect("the track is on the page").rect;
+    let track = app
+        .frame(f, i)
+        .hits
+        .iter()
+        .find(|h| h.action == Action::Confirm(which))
+        .expect("the track is on the page")
+        .rect;
     let y = track.centre().1 - app.top().1;
     let mut fx = app.touch(Touch::Down(track.x + track.h / 2.0, y), f, 0);
     fx.extend(app.touch(Touch::Move(track.x + track.w / 2.0, y), f, 0));
@@ -235,7 +303,15 @@ pub(super) fn type_text(app: &mut App, f: &Fonts, i: &DeviceInfo, text: &str) {
 }
 
 pub(super) fn entry(name: &str, kind: FileKind) -> FileRow {
-    FileRow { name: name.into(), kind, size: 4096, modified: 1_792_348_260, mode: 0o040_755, uid: 0, gid: 0 }
+    FileRow {
+        name: name.into(),
+        kind,
+        size: 4096,
+        modified: 1_792_348_260,
+        mode: 0o040_755,
+        uid: 0,
+        gid: 0,
+    }
 }
 
 /// When the tests list folders: a day after the entries changed.
@@ -249,7 +325,14 @@ pub(super) fn folder(items: usize) -> FileKind {
 pub(super) fn in_sdcard(f: &Fonts, i: &DeviceInfo) -> App {
     let mut app = App::new(Screen::Advanced, W, H, PPD);
     tap(&mut app, f, i, Action::Open(Screen::Files));
-    app.set_files("/sdcard".into(), Ok(vec![entry("DCIM", folder(2)), entry("a.zip", FileKind::File)]), LISTED);
+    app.set_files(
+        "/sdcard".into(),
+        Ok(vec![
+            entry("DCIM", folder(2)),
+            entry("a.zip", FileKind::File),
+        ]),
+        LISTED,
+    );
     app
 }
 
@@ -269,7 +352,14 @@ pub(super) fn toast(app: &App) -> Option<&str> {
 
 pub(super) fn network(name: &str, signal: i32, security: Security) -> Network {
     let bands = skyward_net::wlan::Bands::of(5805);
-    Network { ssid: name.as_bytes().to_vec(), name: name.into(), signal, frequency: 5805, bands, security }
+    Network {
+        ssid: name.as_bytes().to_vec(),
+        name: name.into(),
+        signal,
+        frequency: 5805,
+        bands,
+        security,
+    }
 }
 
 pub(super) fn joined(name: &str, stage: Joining) -> Wlan {
@@ -277,14 +367,25 @@ pub(super) fn joined(name: &str, stage: Joining) -> Wlan {
     Wlan {
         power: Power::On,
         networks: vec![n.clone()],
-        joined: Some(skyward_net::wlan::Joined { ssid: n.ssid, name: n.name, security: n.security, stage }),
+        joined: Some(skyward_net::wlan::Joined {
+            ssid: n.ssid,
+            name: n.name,
+            security: n.security,
+            stage,
+        }),
     }
 }
 
 /// Partitions an image can go to, each of which the phone has in both
 /// slots.
 pub(super) fn slotted(names: &[&str]) -> Vec<FlashTarget> {
-    names.iter().map(|name| FlashTarget { name: name.to_string(), place: FlashPlace::Slotted }).collect()
+    names
+        .iter()
+        .map(|name| FlashTarget {
+            name: name.to_string(),
+            place: FlashPlace::Slotted,
+        })
+        .collect()
 }
 
 pub(super) fn connected(name: &str) -> Wlan {

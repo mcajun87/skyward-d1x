@@ -4,7 +4,7 @@
 pub mod archive;
 pub mod store;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use skyward_files::Ownership;
 use std::io::Write;
@@ -43,10 +43,20 @@ pub enum Part {
     /// The baseband's settings with the phone's own identity, and the
     /// sensors' calibration.
     Efs,
+    /// The metadata partition, where the phone keeps its update state and
+    /// the second system's own records.
+    Metadata,
 }
 
 impl Part {
-    pub const ALL: [Part; 5] = [Part::Boot, Part::System, Part::Data, Part::Media, Part::Efs];
+    pub const ALL: [Part; 6] = [
+        Part::Boot,
+        Part::System,
+        Part::Efs,
+        Part::Metadata,
+        Part::Data,
+        Part::Media,
+    ];
 }
 
 /// What a backup holds.
@@ -85,8 +95,10 @@ impl Manifest {
     /// The manifest in the backup's `folder`.
     pub fn read(folder: &Path) -> Result<Manifest> {
         let path = folder.join(MANIFEST);
-        let text = std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        let manifest: Manifest = toml::from_str(&text).with_context(|| format!("read {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let manifest: Manifest =
+            toml::from_str(&text).with_context(|| format!("read {}", path.display()))?;
         ensure!(
             (FORMAT_WITHOUT_STORAGE..=FORMAT).contains(&manifest.format),
             "{} is in layout {}, which this recovery does not read",
@@ -101,13 +113,21 @@ impl Manifest {
         let path = folder.join(MANIFEST);
         let text = toml::to_string(self).context("write the manifest")?;
         let mut file = skyward_files::make_file(&path, ownership)?;
-        file.write_all(text.as_bytes()).with_context(|| format!("write {}", path.display()))?;
-        file.sync_all().with_context(|| format!("write {}", path.display()))
+        file.write_all(text.as_bytes())
+            .with_context(|| format!("write {}", path.display()))?;
+        file.sync_all()
+            .with_context(|| format!("write {}", path.display()))
     }
 
     /// Which of [`Part::ALL`] it holds.
-    pub fn parts(&self) -> [bool; 5] {
+    pub fn parts(&self) -> [bool; 6] {
         Part::ALL.map(|p| self.items.iter().any(|i| i.part == p))
+    }
+
+    /// Whether any of its parts is kept encrypted, and so needs a
+    /// passphrase to be read.
+    pub fn encrypted(&self) -> bool {
+        self.items.iter().any(|i| i.stored.encryption.is_some())
     }
 
     /// The bytes its files take.
@@ -125,7 +145,15 @@ mod tests {
     fn a_manifest_reads_back_as_written() {
         let at = std::env::temp_dir().join(format!("skyward-manifest-{}", std::process::id()));
         std::fs::create_dir_all(&at).unwrap();
-        let stored = |name: &str, size| Stored { files: vec![format!("{name}.000")], size, stored: size / 2, compressed: true, sha256: "ab".repeat(32) };
+        let stored = |name: &str, size| Stored {
+            files: vec![format!("{name}.000")],
+            size,
+            stored: size / 2,
+            compressed: true,
+            sha256: "ab".repeat(32),
+            md5: "cd".repeat(16),
+            encryption: None,
+        };
         let m = Manifest {
             format: FORMAT,
             device: "ishtar".into(),
@@ -135,29 +163,58 @@ mod tests {
             android: Some("16".into()),
             data_key: Some("00112233445566778899aabbccddeeff".into()),
             items: vec![
-                Item { part: Part::Boot, name: "boot".into(), stored: stored("boot", 201_326_592) },
-                Item { part: Part::Data, name: "data".into(), stored: stored("data", 9_000_000_000) },
-                Item { part: Part::Media, name: "media".into(), stored: stored("media", 40_000_000_000) },
+                Item {
+                    part: Part::Boot,
+                    name: "boot".into(),
+                    stored: stored("boot", 201_326_592),
+                },
+                Item {
+                    part: Part::Data,
+                    name: "data".into(),
+                    stored: stored("data", 9_000_000_000),
+                },
+                Item {
+                    part: Part::Media,
+                    name: "media".into(),
+                    stored: stored("media", 40_000_000_000),
+                },
             ],
         };
         m.write(&at, Ownership::Kept).unwrap();
         assert_eq!(Manifest::read(&at).unwrap(), m);
-        assert_eq!(m.parts(), [true, false, true, true, false]);
+        assert_eq!(m.parts(), [true, false, false, false, true, true]);
+        assert!(!m.encrypted());
         assert_eq!(m.size(), 100_663_296 + 4_500_000_000 + 20_000_000_000);
         std::fs::remove_dir_all(&at).unwrap();
     }
 
     #[test]
     fn a_backup_in_the_layout_before_reads_and_one_in_a_later_layout_does_not() {
-        let at = std::env::temp_dir().join(format!("skyward-manifest-layouts-{}", std::process::id()));
+        let at =
+            std::env::temp_dir().join(format!("skyward-manifest-layouts-{}", std::process::id()));
         std::fs::create_dir_all(&at).unwrap();
         let before = "format = 1\ndevice = \"ishtar\"\nmade = 1792561872\nslot = \"_b\"\nsystem = \"OS3.0.305.0.WMACNXM\"\ndata_key = \"0011\"\n\n[[items]]\npart = \"data\"\nname = \"data\"\nfiles = [\"data.tar.000\"]\nsize = 9\nstored = 9\ncompressed = false\nsha256 = \"ab\"\n";
         std::fs::write(at.join(MANIFEST), before).unwrap();
         let m = Manifest::read(&at).unwrap();
-        assert_eq!((m.format, m.android.as_deref(), m.parts()), (FORMAT_WITHOUT_STORAGE, None, [false, false, true, false, false]));
-        std::fs::write(at.join(MANIFEST), before.replace("format = 1", "format = 3")).unwrap();
+        assert_eq!(
+            (m.format, m.android.as_deref(), m.parts()),
+            (
+                FORMAT_WITHOUT_STORAGE,
+                None,
+                [false, false, false, false, true, false]
+            )
+        );
+        std::fs::write(
+            at.join(MANIFEST),
+            before.replace("format = 1", "format = 3"),
+        )
+        .unwrap();
         let e = Manifest::read(&at).unwrap_err();
-        assert!(e.to_string().ends_with("is in layout 3, which this recovery does not read"), "{e:#}");
+        assert!(
+            e.to_string()
+                .ends_with("is in layout 3, which this recovery does not read"),
+            "{e:#}"
+        );
         std::fs::remove_dir_all(&at).unwrap();
     }
 }

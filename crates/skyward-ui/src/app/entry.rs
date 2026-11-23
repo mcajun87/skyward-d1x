@@ -41,7 +41,11 @@ impl App {
             Ok(bits) => bits,
             Err(why) => return self.report(&texts::toast::permissions_failed(l, why), now),
         };
-        let entry = self.state.file.as_mut().expect("the permissions page shows an entry");
+        let entry = self
+            .state
+            .file
+            .as_mut()
+            .expect("the permissions page shows an entry");
         entry.mode = (entry.mode & !0o7777) | bits;
         let name = entry.name.clone();
         if let Ok(entries) = &mut self.state.files.entries
@@ -59,14 +63,23 @@ impl App {
     /// more than [`editor::MAX_BYTES`]; or why it could not be read. Text
     /// opens on the editor page, wrapped to its card; anything else is
     /// turned down, saying why.
-    pub fn text_opened(&mut self, f: &Fonts, path: String, read: Result<Option<Vec<u8>>, String>, now: u64) {
+    pub fn text_opened(
+        &mut self,
+        f: &Fonts,
+        path: String,
+        read: Result<Option<Vec<u8>>, String>,
+        now: u64,
+    ) {
         let l = self.state.lang;
         let bytes = match read {
             Ok(Some(bytes)) => bytes,
             Ok(None) => return self.say(l.pick(texts::toast::TOO_BIG_TO_EDIT), now),
             Err(why) => return self.report(&texts::toast::read_failed(l, why), now),
         };
-        let Some(text) = String::from_utf8(bytes).ok().filter(|text| !text.contains('\0')) else {
+        let Some(text) = String::from_utf8(bytes)
+            .ok()
+            .filter(|text| !text.contains('\0'))
+        else {
             return self.say(l.pick(texts::toast::NOT_TEXT), now);
         };
         let l = editor::layout(&self.theme(), f);
@@ -81,7 +94,11 @@ impl App {
     pub fn text_saved(&mut self, outcome: Result<(), String>, now: u64) {
         match outcome {
             Ok(()) => {
-                self.state.editor.as_mut().expect("the editor page shows a file").saved();
+                self.state
+                    .editor
+                    .as_mut()
+                    .expect("the editor page shows a file")
+                    .saved();
                 self.refresh();
                 self.say(self.state.lang.pick(texts::toast::SAVED), now);
             }
@@ -97,7 +114,11 @@ impl App {
 
     /// Where the entry the file page shows is.
     pub(super) fn entry_path(&self) -> String {
-        let entry = self.state.file.as_ref().expect("the file page shows an entry");
+        let entry = self
+            .state
+            .file
+            .as_ref()
+            .expect("the file page shows an entry");
         self.state.files.inside(&entry.name)
     }
 
@@ -106,7 +127,11 @@ impl App {
     /// takes away what is before it; the layer keys change the keyboard.
     pub(super) fn edit_typed(&mut self, cap: Cap) {
         let layer = self.state.layer;
-        let ed = self.state.editor.as_mut().expect("the editor page shows a file");
+        let ed = self
+            .state
+            .editor
+            .as_mut()
+            .expect("the editor page shows a file");
         match cap {
             Cap::Char(ch) if layer == Layer::Shifted => {
                 ed.insert(ch.to_ascii_uppercase());
@@ -116,7 +141,13 @@ impl App {
             Cap::Space => ed.insert(' '),
             Cap::Backspace => ed.backspace(),
             Cap::Enter => ed.newline(),
-            Cap::Shift => self.state.layer = if layer == Layer::Shifted { Layer::Letters } else { Layer::Shifted },
+            Cap::Shift => {
+                self.state.layer = if layer == Layer::Shifted {
+                    Layer::Letters
+                } else {
+                    Layer::Shifted
+                }
+            }
             Cap::Show(shown) => self.state.layer = shown,
         }
         self.edits += 1;
@@ -132,7 +163,10 @@ impl App {
     /// keyboard, which stays as it was.
     pub(super) fn refresh_text(&mut self) {
         let t = self.theme();
-        self.refresh_rows(0, (t.m.h as f32 - widgets::keyboard_height(&t)).floor() as u32);
+        self.refresh_rows(
+            0,
+            (t.m.h as f32 - widgets::keyboard_height(&t)).floor() as u32,
+        );
     }
 
     /// A tap at page `x`, `y` on the editor's card puts the cursor between
@@ -142,7 +176,11 @@ impl App {
         if !l.card.contains(x, y) {
             return;
         }
-        let ed = self.state.editor.as_mut().expect("the editor page shows a file");
+        let ed = self
+            .state
+            .editor
+            .as_mut()
+            .expect("the editor page shows a file");
         let row = (((y - l.y0) / l.pitch).floor().max(0.0) as usize).min(l.rows as usize - 1);
         ed.place(ed.top() + row, (x - l.x0) / l.cell);
         self.edits += 1;
@@ -167,15 +205,38 @@ mod tests {
             tap(&mut app, &f, &i, Action::Type(Cap::Backspace));
         }
         type_text(&mut app, &f, &i, "b");
-        let rename = Effect::Rename { path: "/sdcard/a.zip".into(), name: "ab".into() };
-        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![rename]);
-        app.renamed(Err(RenameRefused::Failed("rename /sdcard/a.zip to ab: No space left on device (os error 28)".into())), 0);
-        assert_eq!(app.screen(), Screen::Rename, "a name refused can be typed again");
+        let rename = Effect::Rename {
+            path: "/sdcard/a.zip".into(),
+            name: "ab".into(),
+        };
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::Type(Cap::Enter)),
+            vec![rename]
+        );
+        app.renamed(
+            Err(RenameRefused::Failed(
+                "rename /sdcard/a.zip to ab: No space left on device (os error 28)".into(),
+            )),
+            0,
+        );
+        assert_eq!(
+            app.screen(),
+            Screen::Rename,
+            "a name refused can be typed again"
+        );
         app.toast = None;
         app.renamed(Err(RenameRefused::Taken), 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("该文件夹中已有\"ab\""), "as the folder compares names");
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("该文件夹中已有\"ab\""),
+            "as the folder compares names"
+        );
         app.renamed(Ok(()), 0);
-        assert_eq!(app.screen(), Screen::Files, "renamed, the folder shows again");
+        assert_eq!(
+            app.screen(),
+            Screen::Files,
+            "renamed, the folder shows again"
+        );
     }
 
     #[test]
@@ -185,34 +246,109 @@ mod tests {
         hold_entry(&mut app, &f, &i, 1);
         tap(&mut app, &f, &i, Action::OpenPermissions);
         assert_eq!(app.screen(), Screen::Permissions);
-        let bits: Vec<u32> = app.frame(&f, &i).hits.iter().filter_map(|h| if let Action::ModeBit(b) = h.action { Some(b) } else { None }).collect();
-        assert_eq!(bits, [0o400, 0o200, 0o100, 0o040, 0o020, 0o010, 0o004, 0o002, 0o001, 0o4000, 0o2000, 0o1000]);
-        let set = |mode| vec![Effect::SetMode { path: "/sdcard/a.zip".into(), mode }];
-        assert_eq!(tap(&mut app, &f, &i, Action::ModeBit(0o002)), set(0o757), "everyone may write");
+        let bits: Vec<u32> = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .filter_map(|h| {
+                if let Action::ModeBit(b) = h.action {
+                    Some(b)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            bits,
+            [
+                0o400, 0o200, 0o100, 0o040, 0o020, 0o010, 0o004, 0o002, 0o001, 0o4000, 0o2000,
+                0o1000
+            ]
+        );
+        let set = |mode| {
+            vec![Effect::SetMode {
+                path: "/sdcard/a.zip".into(),
+                mode,
+            }]
+        };
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::ModeBit(0o002)),
+            set(0o757),
+            "everyone may write"
+        );
         app.mode_set(0o757, Ok(0o757), 0);
-        assert_eq!(app.state.file.as_ref().unwrap().mode, 0o040_757, "its type stays");
-        assert_eq!(tap(&mut app, &f, &i, Action::ModeBit(0o100)), set(0o657), "and back off");
+        assert_eq!(
+            app.state.file.as_ref().unwrap().mode,
+            0o040_757,
+            "its type stays"
+        );
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::ModeBit(0o100)),
+            set(0o657),
+            "and back off"
+        );
         app.toast = None;
         app.mode_set(0o4757, Ok(0o757), 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("该位置不支持修改权限"), "a filesystem that kept none of it");
-        app.mode_set(0o755, Err("give /sdcard/a.zip the permissions 0755: Read-only file system (os error 30)".into()), 0);
-        assert!(app.toast.as_ref().is_some_and(|t| t.0.starts_with("修改权限失败：give /sdcard/a.zip")), "{:?}", app.toast);
-        assert_eq!(app.state.file.as_ref().unwrap().mode, 0o040_757, "as it last was");
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("该位置不支持修改权限"),
+            "a filesystem that kept none of it"
+        );
+        app.mode_set(
+            0o755,
+            Err(
+                "give /sdcard/a.zip the permissions 0755: Read-only file system (os error 30)"
+                    .into(),
+            ),
+            0,
+        );
+        assert!(
+            app.toast
+                .as_ref()
+                .is_some_and(|t| t.0.starts_with("修改权限失败：give /sdcard/a.zip")),
+            "{:?}",
+            app.toast
+        );
+        assert_eq!(
+            app.state.file.as_ref().unwrap().mode,
+            0o040_757,
+            "as it last was"
+        );
         tap_back(&mut app, &f, &i, 0);
         tap_back(&mut app, &f, &i, 0);
-        assert_eq!(app.state.files.entries.as_ref().unwrap()[1].mode, 0o040_757, "the folder knows it too");
+        assert_eq!(
+            app.state.files.entries.as_ref().unwrap()[1].mode,
+            0o040_757,
+            "the folder knows it too"
+        );
     }
 
     #[test]
     fn a_links_page_offers_no_permissions_of_its_own() {
         let (f, i) = (fonts(), info());
         let mut app = in_sdcard(&f, &i);
-        app.state.file = Some(entry("latest", FileKind::Link { target: "DCIM".into(), folder: true }));
+        app.state.file = Some(entry(
+            "latest",
+            FileKind::Link {
+                target: "DCIM".into(),
+                folder: true,
+            },
+        ));
         app.open(Screen::FileInfo);
-        assert!(!app.frame(&f, &i).hits.iter().any(|h| h.action == Action::OpenPermissions));
+        assert!(
+            !app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| h.action == Action::OpenPermissions)
+        );
         app.state.file = Some(entry("a.zip", FileKind::File));
         app.refresh();
-        assert!(app.frame(&f, &i).hits.iter().any(|h| h.action == Action::OpenPermissions));
+        assert!(
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| h.action == Action::OpenPermissions)
+        );
     }
 
     #[test]
@@ -220,27 +356,62 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Advanced, W, H, PPD);
         tap(&mut app, &f, &i, Action::Open(Screen::Files));
-        app.set_files("/data/adb".into(), Ok(vec![entry("run.sh", FileKind::File)]), LISTED);
-        assert_eq!(tap(&mut app, &f, &i, Action::OpenEntry(0)), vec![Effect::OpenText("/data/adb/run.sh".into())]);
-        app.text_opened(&f, "/data/adb/run.sh".into(), Ok(Some(b"echo hi\n".to_vec())), 0);
+        app.set_files(
+            "/data/adb".into(),
+            Ok(vec![entry("run.sh", FileKind::File)]),
+            LISTED,
+        );
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::OpenEntry(0)),
+            vec![Effect::OpenText("/data/adb/run.sh".into())]
+        );
+        app.text_opened(
+            &f,
+            "/data/adb/run.sh".into(),
+            Ok(Some(b"echo hi\n".to_vec())),
+            0,
+        );
         assert_eq!(app.screen(), Screen::Editor);
         let frame = app.frame(&f, &i);
         assert_eq!(frame.button, None, "nothing waits to be saved");
         assert!(frame.caret.is_some());
-        let keys: Vec<Action> = frame.hits.iter().map(|h| h.action).filter(|a| matches!(a, Action::TermKey(_))).collect();
+        let keys: Vec<Action> = frame
+            .hits
+            .iter()
+            .map(|h| h.action)
+            .filter(|a| matches!(a, Action::TermKey(_)))
+            .collect();
         assert_eq!(keys, editor::EDITOR_KEYS.map(Action::TermKey));
         tap(&mut app, &f, &i, Action::Type(Cap::Shift));
         tap(&mut app, &f, &i, Action::Type(Cap::Char('x')));
-        assert_eq!(app.state.layer, Layer::Letters, "a capital lasts one letter");
+        assert_eq!(
+            app.state.layer,
+            Layer::Letters,
+            "a capital lasts one letter"
+        );
         tap(&mut app, &f, &i, Action::Type(Cap::Space));
         tap(&mut app, &f, &i, Action::TermKey(TermKey::Tab));
         tap(&mut app, &f, &i, Action::Type(Cap::Enter));
-        assert_eq!(app.frame(&f, &i).button, Some((widgets::Glyph::Done, Action::SaveText)));
-        let save = vec![Effect::SaveText { path: "/data/adb/run.sh".into(), text: "X \t\necho hi\n".into() }];
+        assert_eq!(
+            app.frame(&f, &i).button,
+            Some((widgets::Glyph::Done, Action::SaveText))
+        );
+        let save = vec![Effect::SaveText {
+            path: "/data/adb/run.sh".into(),
+            text: "X \t\necho hi\n".into(),
+        }];
         assert_eq!(tap_button(&mut app, &f, &i, 0), save);
         app.text_saved(Err("rename /data/adb/.run.sh.0.saving to /data/adb/run.sh: Read-only file system (os error 30)".into()), 0);
-        assert!(toast(&app).is_some_and(|t| t.starts_with("保存失败：rename")), "{:?}", app.toast);
-        assert_eq!(app.frame(&f, &i).button, Some((widgets::Glyph::Done, Action::SaveText)), "still to save");
+        assert!(
+            toast(&app).is_some_and(|t| t.starts_with("保存失败：rename")),
+            "{:?}",
+            app.toast
+        );
+        assert_eq!(
+            app.frame(&f, &i).button,
+            Some((widgets::Glyph::Done, Action::SaveText)),
+            "still to save"
+        );
         assert_eq!(tap_button(&mut app, &f, &i, 0), save);
         app.text_saved(Ok(()), 0);
         assert_eq!(toast(&app), Some("已保存"));
@@ -254,16 +425,28 @@ mod tests {
     fn leaving_the_editor_with_changes_unsaved_takes_going_back_again() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Files, W, H, PPD);
-        app.set_files("/tmp".into(), Ok(vec![entry("a.txt", FileKind::File)]), LISTED);
+        app.set_files(
+            "/tmp".into(),
+            Ok(vec![entry("a.txt", FileKind::File)]),
+            LISTED,
+        );
         app.text_opened(&f, "/tmp/a.txt".into(), Ok(Some(b"a".to_vec())), 0);
         tap(&mut app, &f, &i, Action::Type(Cap::Char('b')));
         tap_back(&mut app, &f, &i, 1000);
         assert_eq!(app.screen(), Screen::Editor, "the first back only warns");
         assert_eq!(toast(&app), Some("修改尚未保存，再次返回将放弃修改"));
         tap_back(&mut app, &f, &i, 1000 + TOAST_MS);
-        assert_eq!(app.screen(), Screen::Editor, "once the warning is gone, back warns again");
+        assert_eq!(
+            app.screen(),
+            Screen::Editor,
+            "once the warning is gone, back warns again"
+        );
         tap_back(&mut app, &f, &i, 1000 + TOAST_MS + 500);
-        assert_eq!(app.screen(), Screen::Files, "back again while it shows leaves");
+        assert_eq!(
+            app.screen(),
+            Screen::Files,
+            "back again while it shows leaves"
+        );
         assert_eq!(app.state.editor, None, "without the changes");
     }
 
@@ -273,8 +456,14 @@ mod tests {
         let mut app = in_sdcard(&f, &i);
         let refused = [
             (Ok(None), "暂不支持编辑超过 2 MB 的文件"),
-            (Ok(Some(vec![0xff, 0xfe, b'a'])), "仅支持编辑 UTF-8 编码的文本文件"),
-            (Ok(Some(b"\x7fELF\x02\x01\x01\0".to_vec())), "仅支持编辑 UTF-8 编码的文本文件"),
+            (
+                Ok(Some(vec![0xff, 0xfe, b'a'])),
+                "仅支持编辑 UTF-8 编码的文本文件",
+            ),
+            (
+                Ok(Some(b"\x7fELF\x02\x01\x01\0".to_vec())),
+                "仅支持编辑 UTF-8 编码的文本文件",
+            ),
         ];
         for (read, said) in refused {
             app.toast = None;
@@ -282,8 +471,16 @@ mod tests {
             assert_eq!(app.screen(), Screen::Files);
             assert_eq!(toast(&app), Some(said));
         }
-        app.text_opened(&f, "/sdcard/a.bin".into(), Err("open /sdcard/a.bin: Permission denied (os error 13)".into()), 0);
-        assert_eq!(toast(&app), Some("读取失败：open /sdcard/a.bin: Permission denied (os error 13)"));
+        app.text_opened(
+            &f,
+            "/sdcard/a.bin".into(),
+            Err("open /sdcard/a.bin: Permission denied (os error 13)".into()),
+            0,
+        );
+        assert_eq!(
+            toast(&app),
+            Some("读取失败：open /sdcard/a.bin: Permission denied (os error 13)")
+        );
         assert_eq!(app.state.editor, None);
     }
 
@@ -292,11 +489,28 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = in_sdcard(&f, &i);
         hold_entry(&mut app, &f, &i, 1);
-        assert_eq!(tap(&mut app, &f, &i, Action::EditEntry), vec![Effect::OpenText("/sdcard/a.zip".into())]);
-        for kind in [folder(2), FileKind::Link { target: "a.zip".into(), folder: false }, FileKind::Special] {
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::EditEntry),
+            vec![Effect::OpenText("/sdcard/a.zip".into())]
+        );
+        for kind in [
+            folder(2),
+            FileKind::Link {
+                target: "a.zip".into(),
+                folder: false,
+            },
+            FileKind::Special,
+        ] {
             app.state.file = Some(entry("other", kind));
             app.refresh();
-            assert!(!app.frame(&f, &i).hits.iter().any(|h| h.action == Action::EditEntry), "{:?}", app.state.file);
+            assert!(
+                !app.frame(&f, &i)
+                    .hits
+                    .iter()
+                    .any(|h| h.action == Action::EditEntry),
+                "{:?}",
+                app.state.file
+            );
         }
     }
 
@@ -306,8 +520,16 @@ mod tests {
         let mut app = in_sdcard(&f, &i);
         hold_entry(&mut app, &f, &i, 1);
         app.text_opened(&f, "/sdcard/a.zip".into(), Ok(Some(b"x".to_vec())), 0);
-        let saved = FileRow { size: 9, modified: LISTED, ..entry("a.zip", FileKind::File) };
-        app.set_files("/sdcard".into(), Ok(vec![entry("DCIM", folder(2)), saved.clone()]), LISTED);
+        let saved = FileRow {
+            size: 9,
+            modified: LISTED,
+            ..entry("a.zip", FileKind::File)
+        };
+        app.set_files(
+            "/sdcard".into(),
+            Ok(vec![entry("DCIM", folder(2)), saved.clone()]),
+            LISTED,
+        );
         assert_eq!(app.state.file, Some(saved));
     }
 
@@ -317,10 +539,22 @@ mod tests {
         let mut app = App::new(Screen::Files, W, H, PPD);
         let text: String = (0..200).map(|n| format!("line {n}\n")).collect();
         app.text_opened(&f, "/tmp/long.txt".into(), Ok(Some(text.into_bytes())), 0);
-        let (card, pitch) = app.frame(&f, &i).scrollback.expect("the editor's text scrolls");
+        let (card, pitch) = app
+            .frame(&f, &i)
+            .scrollback
+            .expect("the editor's text scrolls");
         let l = editor::layout(&app.theme(), &f);
-        let ed = |app: &App| app.state.editor.clone().expect("the editor page shows a file");
-        app.touch(Touch::Down(l.x0 + 4.2 * l.cell, l.y0 + 2.5 * l.pitch), &f, 0);
+        let ed = |app: &App| {
+            app.state
+                .editor
+                .clone()
+                .expect("the editor page shows a file")
+        };
+        app.touch(
+            Touch::Down(l.x0 + 4.2 * l.cell, l.y0 + 2.5 * l.pitch),
+            &f,
+            0,
+        );
         app.touch(Touch::Up, &f, 0);
         assert_eq!(ed(&app).cursor(), (2, 4), "after \"line\" on the third row");
         let (x, y) = (card.x + card.w / 2.0, card.y + card.h / 2.0);
@@ -328,10 +562,18 @@ mod tests {
         app.touch(Touch::Move(x, y - pitch * 5.5), &f, 110);
         app.touch(Touch::Up, &f, 400);
         assert_eq!(ed(&app).top(), 5, "up shows the lines after");
-        assert_eq!(ed(&app).cursor(), (2, 4), "a drag leaves the cursor where it was");
+        assert_eq!(
+            ed(&app).cursor(),
+            (2, 4),
+            "a drag leaves the cursor where it was"
+        );
         assert_eq!(app.top().1, 0.0, "the page itself stays put");
         tap(&mut app, &f, &i, Action::TermKey(TermKey::Down));
-        assert_eq!((ed(&app).cursor(), ed(&app).top()), ((3, 4), 3), "moving the cursor brings it into view");
+        assert_eq!(
+            (ed(&app).cursor(), ed(&app).top()),
+            ((3, 4), 3),
+            "moving the cursor brings it into view"
+        );
         app.touch(Touch::Down(x, y), &f, 1000);
         for k in 1..=5 {
             app.touch(Touch::Move(x, y - pitch * k as f32), &f, 1000 + k * 8);
@@ -340,7 +582,10 @@ mod tests {
         let lifted = ed(&app).top();
         app.tick(1200);
         let gliding = ed(&app).top();
-        assert!(gliding > lifted + 5, "a flick glides on: {lifted} to {gliding}");
+        assert!(
+            gliding > lifted + 5,
+            "a flick glides on: {lifted} to {gliding}"
+        );
         app.touch(Touch::Down(x, y), &f, 1210);
         app.touch(Touch::Up, &f, 1220);
         app.tick(2000);
@@ -354,17 +599,28 @@ mod tests {
         let mut app = in_sdcard(&f, &i);
         hold_entry(&mut app, &f, &i, 1);
         tap(&mut app, &f, &i, Action::RenameEntry);
-        let refused =
-            [("", "请输入名称"), ("..", "名称不能为\".\"或\"..\""), ("x/y", "名称不能包含\"/\""), ("DCIM", "该文件夹中已有\"DCIM\"")];
+        let refused = [
+            ("", "请输入名称"),
+            ("..", "名称不能为\".\"或\"..\""),
+            ("x/y", "名称不能包含\"/\""),
+            ("DCIM", "该文件夹中已有\"DCIM\""),
+        ];
         for (name, said) in refused {
             app.state.new_name = name.into();
             app.toast = None;
-            assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty(), "{name:?} is not renamed to");
+            assert!(
+                tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty(),
+                "{name:?} is not renamed to"
+            );
             assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some(said));
             assert_eq!(app.screen(), Screen::Rename);
         }
         app.state.new_name = "a.zip".into();
         assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty());
-        assert_eq!(app.screen(), Screen::FileInfo, "the name left as it was, the page goes");
+        assert_eq!(
+            app.screen(),
+            Screen::FileInfo,
+            "the name left as it was, the page goes"
+        );
     }
 }

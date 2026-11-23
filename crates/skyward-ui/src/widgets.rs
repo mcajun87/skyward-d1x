@@ -1,5 +1,5 @@
 use crate::canvas::Canvas;
-use crate::color::{blend_over, mix, over, Rgba};
+use crate::color::{Rgba, blend_over, mix, over};
 use crate::fmt;
 use crate::font::{Face, Fonts};
 use crate::geom::Rect;
@@ -27,7 +27,15 @@ pub fn wlan_fan(c: &mut Canvas, cx: f32, cy: f32, r: f32, level: u8, lit: Rgba, 
     let apex = cy + (r - dot) / 2.0;
     for (k, reach) in [0.42f32, 0.71, 1.0].into_iter().enumerate() {
         let color = if (k as u8) < level { lit } else { unlit };
-        c.stroke_arc(cx, apex, r * reach - w / 2.0, -135f32.to_radians(), 90f32.to_radians(), w, color);
+        c.stroke_arc(
+            cx,
+            apex,
+            r * reach - w / 2.0,
+            -135f32.to_radians(),
+            90f32.to_radians(),
+            w,
+            color,
+        );
     }
     c.fill_circle(cx, apex, dot, lit);
 }
@@ -40,9 +48,31 @@ pub fn padlock(c: &mut Canvas, cx: f32, cy: f32, h: f32, color: Rgba) {
     let shackle = 0.25 * h;
     let top = cy - h / 2.0;
     let body = top + h - bh;
-    c.stroke_arc(cx, top + shackle + sw / 2.0, shackle, -180f32.to_radians(), 180f32.to_radians(), sw, color);
-    c.line(cx - shackle, top + shackle + sw / 2.0, cx - shackle, body, sw, color);
-    c.line(cx + shackle, top + shackle + sw / 2.0, cx + shackle, body, sw, color);
+    c.stroke_arc(
+        cx,
+        top + shackle + sw / 2.0,
+        shackle,
+        -180f32.to_radians(),
+        180f32.to_radians(),
+        sw,
+        color,
+    );
+    c.line(
+        cx - shackle,
+        top + shackle + sw / 2.0,
+        cx - shackle,
+        body,
+        sw,
+        color,
+    );
+    c.line(
+        cx + shackle,
+        top + shackle + sw / 2.0,
+        cx + shackle,
+        body,
+        sw,
+        color,
+    );
     c.fill_round_rect(cx - bw / 2.0, body, bw, bh, 0.12 * h, color);
 }
 
@@ -130,7 +160,8 @@ fn chevron(c: &mut Canvas, t: &Theme, right: f32, cy: f32, color: Rgba) {
 /// Punctuation that never starts a line; at the end of a full line it hangs
 /// past the edge instead. Japanese holds its small kana and the mark that
 /// lengthens a sound to the same.
-const NO_LINE_START: &str = "，。、；：！？）」』》%,.;:!?)]>”…ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ";
+const NO_LINE_START: &str =
+    "，。、；：！？）」』》%,.;:!?)]>”…ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ";
 
 /// Opening punctuation that never ends a line; it moves down with what it
 /// opens.
@@ -191,8 +222,16 @@ fn edges(text: &[char]) -> Vec<Edge> {
 /// written with; an apostrophe; and a space that holds its neighbours
 /// together, as French sets one before its colons.
 fn in_word(ch: char) -> bool {
-    let spaced = ch.is_alphanumeric() && !matches!(ch.script(), Script::Han | Script::Hiragana | Script::Katakana);
-    spaced || matches!(ch, '_' | '-' | '.' | '/' | ':' | '\'' | '’' | '\u{a0}' | '\u{202f}')
+    let spaced = ch.is_alphanumeric()
+        && !matches!(
+            ch.script(),
+            Script::Han | Script::Hiragana | Script::Katakana
+        );
+    spaced
+        || matches!(
+            ch,
+            '_' | '-' | '.' | '/' | ':' | '\'' | '’' | '\u{a0}' | '\u{202f}'
+        )
 }
 
 pub(crate) fn wrap(c: &Canvas, face: &Face, text: &str, px: f32, max_w: f32) -> Vec<String> {
@@ -221,7 +260,11 @@ pub(crate) fn wrap(c: &Canvas, face: &Face, text: &str, px: f32, max_w: f32) -> 
                 match (run, line.len() - run) {
                     (0, _) => {}
                     (_, 0) => {
-                        if let Some(slash) = line.iter().rposition(|&k| text[k] == '/').filter(|&s| s > 0) {
+                        if let Some(slash) = line
+                            .iter()
+                            .rposition(|&k| text[k] == '/')
+                            .filter(|&s| s > 0)
+                        {
                             split = slash + 1;
                         }
                     }
@@ -298,7 +341,15 @@ pub fn status_bar(c: &mut Canvas, t: &Theme, f: &Fonts, bar: &Bar, ink: Rgba) {
     let m = &t.m;
     let cy = m.status_cy;
     // Digits carry no descender, so centre on half their height (≈0.72 em).
-    c.text(&f.status, bar.clock, m.status_x, cy + m.status_px * 0.36, m.status_px, ink, None);
+    c.text(
+        &f.status,
+        bar.clock,
+        m.status_x,
+        cy + m.status_px * 0.36,
+        m.status_px,
+        ink,
+        None,
+    );
     let mut right = m.w as f32 - m.status_right;
     if let Some((level, charging)) = bar.battery {
         if let Some(kind) = charging {
@@ -348,7 +399,12 @@ const MARK_GAP_DP: f32 = 4.33;
 /// side going out along y. Read off the stock NFC icon.
 const SMOOTH_CORNER: [[(f32, f32); 4]; 3] = [
     [(-1.0, 0.0), (-0.65, 0.0), (-0.475, 0.0), (-0.341, 0.068)],
-    [(-0.341, 0.068), (-0.2236, 0.128), (-0.128, 0.2236), (-0.068, 0.341)],
+    [
+        (-0.341, 0.068),
+        (-0.2236, 0.128),
+        (-0.128, 0.2236),
+        (-0.068, 0.341),
+    ],
     [(-0.068, 0.341), (0.0, 0.475), (0.0, 0.65), (0.0, 1.0)],
 ];
 
@@ -359,7 +415,10 @@ const SMOOTH_STEPS: usize = 4;
 fn cubic([p0, p1, p2, p3]: [(f32, f32); 4], s: f32) -> (f32, f32) {
     let r = 1.0 - s;
     let (a, b, c, d) = (r * r * r, 3.0 * r * r * s, 3.0 * r * s * s, s * s * s);
-    (a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0, a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1)
+    (
+        a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0,
+        a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1,
+    )
 }
 
 /// The outline of a rectangle whose corners ease into its sides as the
@@ -375,7 +434,8 @@ fn smooth_rect(x: f32, y: f32, w: f32, h: f32, bend: f32) -> Vec<(f32, f32)> {
     ];
     let mut pts = Vec::with_capacity(4 * (3 * SMOOTH_STEPS + 1));
     for ((kx, ky), (ax, ay), (bx, by)) in corners {
-        let at = |(u, v): (f32, f32)| (kx + (u * ax + v * bx) * bend, ky + (u * ay + v * by) * bend);
+        let at =
+            |(u, v): (f32, f32)| (kx + (u * ax + v * bx) * bend, ky + (u * ay + v * by) * bend);
         for piece in SMOOTH_CORNER {
             pts.extend((0..SMOOTH_STEPS).map(|k| at(cubic(piece, k as f32 / SMOOTH_STEPS as f32))));
         }
@@ -390,7 +450,12 @@ fn knock_out(shape: &Canvas, cut: &Canvas, ink: Rgba) -> Canvas {
     let mut art = Canvas::new(shape.w, shape.h);
     for (i, px) in art.data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let (a, hole) = (shape.data[i * 4 + 3] as u32, cut.data[i * 4 + 3] as u32);
-        *px = [ink.r, ink.g, ink.b, (a * (255 - hole) / 255 * ink.a as u32 / 255) as u8];
+        *px = [
+            ink.r,
+            ink.g,
+            ink.b,
+            (a * (255 - hole) / 255 * ink.a as u32 / 255) as u8,
+        ];
     }
     art
 }
@@ -403,13 +468,23 @@ const BADGE_CAP_DP: f32 = 6.6;
 
 /// `letter` cut out of a filled badge in `ink`, ending at `right` on the
 /// bar's middle `cy`: its own canvas, where it goes, and how wide it is.
-fn badge(t: &Theme, f: &Fonts, letter: &str, right: f32, cy: f32, ink: Rgba) -> (Canvas, i32, i32, f32) {
+fn badge(
+    t: &Theme,
+    f: &Fonts,
+    letter: &str,
+    right: f32,
+    cy: f32,
+    ink: Rgba,
+) -> (Canvas, i32, i32, f32) {
     let m = &t.m;
     let side = m.dp(BADGE_DP);
     // The size whose capitals stand that tall, from a size large enough to
     // measure them to a hundredth.
     let px = m.dp(BADGE_CAP_DP) * 100.0 / f.speed.cap(100.0);
-    let (ox, oy) = ((right - side - 1.0).floor(), (cy - side / 2.0 - 1.0).floor());
+    let (ox, oy) = (
+        (right - side - 1.0).floor(),
+        (cy - side / 2.0 - 1.0).floor(),
+    );
     let n = ((right - ox + 1.0).ceil() as u32).max((cy + side / 2.0 - oy + 1.0).ceil() as u32);
     let (x, top) = (right - side - ox, cy - side / 2.0 - oy);
     let white = Rgba::rgb(255, 255, 255);
@@ -418,7 +493,15 @@ fn badge(t: &Theme, f: &Fonts, letter: &str, right: f32, cy: f32, ink: Rgba) -> 
     // The letter centred in the badge by its ink.
     let mut cut = Canvas::new(n, n);
     let (l, r) = f.speed.ink_span(letter, px);
-    cut.text(&f.speed, letter, x + side / 2.0 - (l + r) / 2.0, top + (side + m.dp(BADGE_CAP_DP)) / 2.0, px, white, None);
+    cut.text(
+        &f.speed,
+        letter,
+        x + side / 2.0 - (l + r) / 2.0,
+        top + (side + m.dp(BADGE_CAP_DP)) / 2.0,
+        px,
+        white,
+        None,
+    );
     (knock_out(&shape, &cut, ink), ox as i32, oy as i32, side)
 }
 
@@ -444,11 +527,22 @@ const KEYHOLE_SLOT_DP: (f32, f32) = (0.9, 1.9);
 /// how wide it is.
 fn lock_mark(t: &Theme, open: bool, right: f32, cy: f32, ink: Rgba) -> (Canvas, i32, i32, f32) {
     let m = &t.m;
-    let (w, h, bh, sw) = (m.dp(LOCK_BODY_W_DP), m.dp(LOCK_MARK_H_DP), m.dp(LOCK_BODY_H_DP), m.dp(LOCK_STROKE_DP));
+    let (w, h, bh, sw) = (
+        m.dp(LOCK_BODY_W_DP),
+        m.dp(LOCK_MARK_H_DP),
+        m.dp(LOCK_BODY_H_DP),
+        m.dp(LOCK_STROKE_DP),
+    );
     // The canvas has room for the shackle risen, shut or not.
     let top = cy - h / 2.0;
-    let (ox, oy) = ((right - w - 1.0).floor(), (top - m.dp(LOCK_RISE_DP) - 1.0).floor());
-    let (cw, ch) = ((right - ox + 1.0).ceil() as u32, (top + h - oy + 1.0).ceil() as u32);
+    let (ox, oy) = (
+        (right - w - 1.0).floor(),
+        (top - m.dp(LOCK_RISE_DP) - 1.0).floor(),
+    );
+    let (cw, ch) = (
+        (right - ox + 1.0).ceil() as u32,
+        (top + h - oy + 1.0).ceil() as u32,
+    );
     let (x, top) = (right - w - ox, top - oy);
     let (mid, body) = (x + w / 2.0, top + h - bh);
     // The arc through the shackle's middle, and where it centres.
@@ -457,14 +551,36 @@ fn lock_mark(t: &Theme, open: bool, right: f32, cy: f32, ink: Rgba) -> (Canvas, 
     let white = Rgba::rgb(255, 255, 255);
     let mut shape = Canvas::new(cw, ch);
     shape.fill_convex(&smooth_rect(x, body, w, bh, m.dp(LOCK_BEND_DP)), white);
-    shape.stroke_arc(mid, crown, r, std::f32::consts::PI, std::f32::consts::PI, sw, white);
+    shape.stroke_arc(
+        mid,
+        crown,
+        r,
+        std::f32::consts::PI,
+        std::f32::consts::PI,
+        sw,
+        white,
+    );
     shape.line(mid - r, crown, mid - r, body + sw, sw, white);
-    let foot = if open { crown + m.dp(LOCK_STUB_DP) } else { body + sw };
+    let foot = if open {
+        crown + m.dp(LOCK_STUB_DP)
+    } else {
+        body + sw
+    };
     shape.line(mid + r, crown, mid + r, foot, sw, white);
     let mut hole = Canvas::new(cw, ch);
-    let (round, (slot_w, slot_h)) = (body + bh * 0.42, (m.dp(KEYHOLE_SLOT_DP.0), m.dp(KEYHOLE_SLOT_DP.1)));
+    let (round, (slot_w, slot_h)) = (
+        body + bh * 0.42,
+        (m.dp(KEYHOLE_SLOT_DP.0), m.dp(KEYHOLE_SLOT_DP.1)),
+    );
     hole.fill_circle(mid, round, m.dp(KEYHOLE_R_DP), white);
-    hole.fill_round_rect(mid - slot_w / 2.0, round, slot_w, slot_h, slot_w / 2.0, white);
+    hole.fill_round_rect(
+        mid - slot_w / 2.0,
+        round,
+        slot_w,
+        slot_h,
+        slot_w / 2.0,
+        white,
+    );
     (knock_out(&shape, &hole, ink), ox as i32, oy as i32, w)
 }
 
@@ -497,22 +613,42 @@ fn wlan_mark(c: &mut Canvas, t: &Theme, w: &WlanMark, right: f32, cy: f32, ink: 
     // The slice is lit whenever a network is joined.
     c.fill_sector(fx, point, 0.0, m.dp(FAN_SLICE_DP), FAN_HALF, ink);
     for (arc, from) in [(FAN_INNER_DP, 2), (FAN_OUTER_DP, 3)] {
-        c.fill_sector(fx, point, m.dp(arc.0), m.dp(arc.1), FAN_HALF, if w.level >= from { ink } else { dim });
+        c.fill_sector(
+            fx,
+            point,
+            m.dp(arc.0),
+            m.dp(arc.1),
+            FAN_HALF,
+            if w.level >= from { ink } else { dim },
+        );
     }
     let half = m.dp(ARROW_HALF_DP);
     let (tip, corner) = (m.dp(ARROW_ROUND_DP.0), m.dp(ARROW_ROUND_DP.1));
     let (up, up_base) = (point + m.dp(ARROW_UP_DP.0), point + m.dp(ARROW_UP_DP.1));
     let (down_base, down) = (point + m.dp(ARROW_DOWN_DP.0), point + m.dp(ARROW_DOWN_DP.1));
     let out = [(ax, up), (ax + half, up_base), (ax - half, up_base)];
-    round_triangle(c, out, [tip, corner, corner], if w.sending { ink } else { dim });
+    round_triangle(
+        c,
+        out,
+        [tip, corner, corner],
+        if w.sending { ink } else { dim },
+    );
     let into = [(ax, down), (ax - half, down_base), (ax + half, down_base)];
-    round_triangle(c, into, [tip, corner, corner], if w.receiving { ink } else { dim });
+    round_triangle(
+        c,
+        into,
+        [tip, corner, corner],
+        if w.receiving { ink } else { dim },
+    );
     fx - m.dp(FAN_OUTER_DP.1) * FAN_HALF.sin()
 }
 
 /// A triangle with each corner rounded to its own radius in `radii`.
 fn round_triangle(c: &mut Canvas, corners: [(f32, f32); 3], radii: [f32; 3], color: Rgba) {
-    let centre = ((corners[0].0 + corners[1].0 + corners[2].0) / 3.0, (corners[0].1 + corners[1].1 + corners[2].1) / 3.0);
+    let centre = (
+        (corners[0].0 + corners[1].0 + corners[2].0) / 3.0,
+        (corners[0].1 + corners[1].1 + corners[2].1) / 3.0,
+    );
     // The normal of the edge from `p` to `q` that points away from the
     // middle.
     let outward = |p: (f32, f32), q: (f32, f32)| {
@@ -535,7 +671,8 @@ fn round_triangle(c: &mut Canvas, corners: [(f32, f32); 3], radii: [f32; 3], col
         let k = 2.0 * r / (sx * sx + sy * sy);
         let (ox, oy) = (v.0 - sx * k, v.1 - sy * k);
         let (from, to) = (a.1.atan2(a.0), b.1.atan2(b.0));
-        let turn = (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        let turn = (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+            - std::f32::consts::PI;
         for s in 0..=4 {
             let at = from + turn * s as f32 / 4.0;
             outline.push((ox + r * at.cos(), oy + r * at.sin()));
@@ -555,16 +692,44 @@ const SPEED_BASES_DP: (f32, f32) = (-2.03, 5.97);
 /// two lines centred on one another and ending at `right`. Returns where
 /// they start.
 #[allow(clippy::too_many_arguments)]
-fn speed(c: &mut Canvas, t: &Theme, f: &Fonts, figures: &str, unit: &str, right: f32, cy: f32, ink: Rgba) -> f32 {
+fn speed(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    figures: &str,
+    unit: &str,
+    right: f32,
+    cy: f32,
+    ink: Rgba,
+) -> f32 {
     let m = &t.m;
     let (px, unit_px) = (m.dp(SPEED_PX_DP), m.dp(SPEED_UNIT_PX_DP));
     // Each line placed by its ink, the room between marks being the room
     // between their ink.
-    let (a, b) = (f.speed.ink_span(figures, px), f.speed.ink_span(unit, unit_px));
+    let (a, b) = (
+        f.speed.ink_span(figures, px),
+        f.speed.ink_span(unit, unit_px),
+    );
     let wide = (a.1 - a.0).max(b.1 - b.0);
     let mid = right - wide / 2.0;
-    c.text(&f.speed, figures, mid - (a.0 + a.1) / 2.0, cy + m.dp(SPEED_BASES_DP.0), px, ink, None);
-    c.text(&f.speed, unit, mid - (b.0 + b.1) / 2.0, cy + m.dp(SPEED_BASES_DP.1), unit_px, ink, None);
+    c.text(
+        &f.speed,
+        figures,
+        mid - (a.0 + a.1) / 2.0,
+        cy + m.dp(SPEED_BASES_DP.0),
+        px,
+        ink,
+        None,
+    );
+    c.text(
+        &f.speed,
+        unit,
+        mid - (b.0 + b.1) / 2.0,
+        cy + m.dp(SPEED_BASES_DP.1),
+        unit_px,
+        ink,
+        None,
+    );
     right - wide
 }
 
@@ -685,21 +850,50 @@ fn bolt(t: &Theme, kind: Bolt, x: f32, cy: f32) -> (Canvas, i32, i32) {
 /// The battery ending at `right`, centred on `cy`, as its own canvas and
 /// where it goes: body and cap, the level's share filled from the left, the
 /// digits in white over a charging or low fill and cut out of any other.
-fn battery(t: &Theme, f: &Fonts, level: u8, plugged: bool, right: f32, cy: f32) -> (Canvas, i32, i32) {
+fn battery(
+    t: &Theme,
+    f: &Fonts,
+    level: u8,
+    plugged: bool,
+    right: f32,
+    cy: f32,
+) -> (Canvas, i32, i32) {
     let m = &t.m;
     let ink = t.pal.battery;
-    let (bw, bh, cap_w, cap_h) = (m.dp(BATTERY_W_DP), m.dp(12.1), m.dp(BATTERY_CAP_DP), m.dp(4.25));
+    let (bw, bh, cap_w, cap_h) = (
+        m.dp(BATTERY_W_DP),
+        m.dp(12.1),
+        m.dp(BATTERY_CAP_DP),
+        m.dp(4.25),
+    );
     let left = right - bw - cap_w;
     let (ox, oy) = ((left - 1.0).floor(), (cy - bh / 2.0 - 1.0).floor());
-    let (w, h) = ((right - ox + 1.0).ceil() as u32, (cy + bh / 2.0 - oy + 1.0).ceil() as u32);
+    let (w, h) = (
+        (right - ox + 1.0).ceil() as u32,
+        (cy + bh / 2.0 - oy + 1.0).ceil() as u32,
+    );
     let (x, top, mid) = (left - ox, cy - bh / 2.0 - oy, cy - oy);
     // Coverage of the body with its cap, and of the digits.
     let white = Rgba::rgb(255, 255, 255);
     let mut shape = Canvas::new(w, h);
     shape.fill_round_rect(x, top, bw, bh, m.dp(3.7), white);
-    shape.fill_round_rect(x + bw - cap_w, mid - cap_h / 2.0, cap_w * 2.0, cap_h, cap_w, white);
+    shape.fill_round_rect(
+        x + bw - cap_w,
+        mid - cap_h / 2.0,
+        cap_w * 2.0,
+        cap_h,
+        cap_w,
+        white,
+    );
     let mut digits = Canvas::new(w, h);
-    digits.text_center(&f.strong, &level.to_string(), x + bw / 2.0, mid, m.dp(9.7), white);
+    digits.text_center(
+        &f.strong,
+        &level.to_string(),
+        x + bw / 2.0,
+        mid,
+        m.dp(9.7),
+        white,
+    );
     // The level fills its share of the whole width, the cap's included, so
     // a full battery fills the cap too.
     let edge = x + (bw + cap_w) * level as f32 / 100.0;
@@ -739,7 +933,13 @@ pub fn back_arrow(c: &mut Canvas, t: &Theme, color: Rgba) {
 /// The `<` moved by (`dx`, `dy`).
 fn arrow_at(c: &mut Canvas, t: &Theme, dx: f32, dy: f32, color: Rgba) {
     let m = &t.m;
-    let (x, cy, w, h, sw) = (m.back_x + dx, m.back_cy + dy, m.back_w, m.back_h, m.back_stroke);
+    let (x, cy, w, h, sw) = (
+        m.back_x + dx,
+        m.back_cy + dy,
+        m.back_w,
+        m.back_h,
+        m.back_stroke,
+    );
     let (tip, end) = (x + sw / 2.0, x + w - sw / 2.0);
     c.line(tip, cy, end, cy - h / 2.0 + sw / 2.0, sw, color);
     c.line(tip, cy, end, cy + h / 2.0 - sw / 2.0, sw, color);
@@ -748,7 +948,12 @@ fn arrow_at(c: &mut Canvas, t: &Theme, dx: f32, dy: f32, color: Rgba) {
 /// The area that answers a tap on the `<` control.
 pub fn back_rect(t: &Theme) -> Rect {
     let m = &t.m;
-    Rect::new(0.0, m.back_cy - m.dp(28.0), m.back_x + m.back_w + m.dp(24.0), m.dp(56.0))
+    Rect::new(
+        0.0,
+        m.back_cy - m.dp(28.0),
+        m.back_x + m.back_w + m.dp(24.0),
+        m.dp(56.0),
+    )
 }
 
 /// How deep the back cue bulges for a finger `travel` pixels in from the
@@ -796,7 +1001,11 @@ pub fn back_cue(c: &mut Canvas, t: &Theme, from_left: bool, cy: f32, depth: f32,
     }
     if arrow {
         let (w, h, sw) = (m.dp(6.0), m.dp(12.7), m.dp(2.1));
-        let cx = if from_left { 0.53 * depth } else { m.w as f32 - 0.53 * depth };
+        let cx = if from_left {
+            0.53 * depth
+        } else {
+            m.w as f32 - 0.53 * depth
+        };
         let (tip, end) = (cx - w / 2.0 + sw / 2.0, cx + w / 2.0 - sw / 2.0);
         let white = Rgba::rgb(255, 255, 255);
         c.line(tip, cy, end, cy - h / 2.0 + sw / 2.0, sw, white);
@@ -816,13 +1025,33 @@ pub fn big_title(t: &Theme, f: &Fonts, title: &str) -> Sprite {
     let m = &t.m;
     let pad = blur_room(t);
     // A title too long for the screen is set smaller, on the same line.
-    let px = Canvas::new(0, 0).fitting(&f.title, title, m.title_px, m.w as f32 - m.title_x - m.margin);
+    let px = Canvas::new(0, 0).fitting(
+        &f.title,
+        title,
+        m.title_px,
+        m.w as f32 - m.title_x - m.margin,
+    );
     let w = Canvas::new(0, 0).text_width(&f.title, title, px);
-    let top = if px == m.title_px { m.title_top } else { m.title_top - f.title.ink(m.title_px).0 + f.title.ink(px).0 };
+    let top = if px == m.title_px {
+        m.title_top
+    } else {
+        m.title_top - f.title.ink(m.title_px).0 + f.title.ink(px).0
+    };
     let (x, y) = (m.title_x - pad, m.title_top - pad);
-    let size = ((w + pad * 2.0).ceil() as u32, (m.title_px * 1.4 + pad * 2.0).ceil() as u32);
+    let size = (
+        (w + pad * 2.0).ceil() as u32,
+        (m.title_px * 1.4 + pad * 2.0).ceil() as u32,
+    );
     Sprite::capture(x, y, size.0, size.1, |c, dx, dy| {
-        c.text_top(&f.title, title, m.title_x + dx, top + dy, px, Rgba::rgb(0, 0, 0), None);
+        c.text_top(
+            &f.title,
+            title,
+            m.title_x + dx,
+            top + dy,
+            px,
+            Rgba::rgb(0, 0, 0),
+            None,
+        );
     })
 }
 
@@ -836,13 +1065,31 @@ pub fn small_title(t: &Theme, f: &Fonts, title: &str) -> Sprite {
     let m = &t.m;
     let pad = blur_room(t);
     // A title that would reach the way back beside it is set smaller.
-    let px = Canvas::new(0, 0).fitting(&f.heading, title, m.account_title_px, m.w as f32 - m.dp(SMALL_TITLE_SIDE) * 2.0);
+    let px = Canvas::new(0, 0).fitting(
+        &f.heading,
+        title,
+        m.account_title_px,
+        m.w as f32 - m.dp(SMALL_TITLE_SIDE) * 2.0,
+    );
     let w = Canvas::new(0, 0).text_width(&f.heading, title, px);
     let h = m.account_title_px * 1.5;
     let (x, y) = ((m.w as f32 - w) / 2.0 - pad, m.back_cy - h / 2.0 - pad);
-    Sprite::capture(x, y, (w + pad * 2.0).ceil() as u32, (h + pad * 2.0).ceil() as u32, |c, dx, dy| {
-        c.text_center(&f.heading, title, m.w as f32 / 2.0 + dx, m.back_cy + dy, px, Rgba::rgb(0, 0, 0));
-    })
+    Sprite::capture(
+        x,
+        y,
+        (w + pad * 2.0).ceil() as u32,
+        (h + pad * 2.0).ceil() as u32,
+        |c, dx, dy| {
+            c.text_center(
+                &f.heading,
+                title,
+                m.w as f32 / 2.0 + dx,
+                m.back_cy + dy,
+                px,
+                Rgba::rgb(0, 0, 0),
+            );
+        },
+    )
 }
 
 /// Where the bar over a scrolled page ends: the status bar and the 56 dp
@@ -873,7 +1120,13 @@ pub const BAR_MASK: [(f32, f32); 17] = [
 ];
 
 /// The About page's mask, solid at its top.
-pub const ABOUT_BAR_MASK: [(f32, f32); 5] = [(0.0, 1.0), (0.52, 0.98), (0.74, 0.8), (0.85, 0.5), (1.0, 0.0)];
+pub const ABOUT_BAR_MASK: [(f32, f32); 5] = [
+    (0.0, 1.0),
+    (0.52, 0.98),
+    (0.74, 0.8),
+    (0.85, 0.5),
+    (1.0, 0.0),
+];
 
 /// The mask over the top of a scrolled page: `color`, nearly solid behind
 /// the status bar and title, thinning out by 20 dp below them, with an
@@ -894,16 +1147,39 @@ pub fn strip_mask(c: &mut Canvas, t: &Theme, color: Rgba, level: f32, top: f32, 
     let h = bottom + t.m.dp(STRIP_FADE_DP);
     let s = bottom / h;
     // The bar mask from where it starts to thin, stretched over the fade.
-    let (solid, _) = BAR_MASK.iter().rev().find(|&&(_, a)| a == BAR_MASK[0].1).expect("the bar mask starts solid");
+    let (solid, _) = BAR_MASK
+        .iter()
+        .rev()
+        .find(|&&(_, a)| a == BAR_MASK[0].1)
+        .expect("the bar mask starts solid");
     let mut stops = vec![(0.0, BAR_MASK[0].1)];
-    stops.extend(BAR_MASK.iter().filter(|&&(p, _)| p >= *solid).map(|&(p, a)| (s + (p - solid) / (1.0 - solid) * (1.0 - s), a)));
-    mask(c, h, &stops, color, level, top.max(0.0) as u32..bottom.max(0.0) as u32);
+    stops.extend(
+        BAR_MASK
+            .iter()
+            .filter(|&&(p, _)| p >= *solid)
+            .map(|&(p, a)| (s + (p - solid) / (1.0 - solid) * (1.0 - s), a)),
+    );
+    mask(
+        c,
+        h,
+        &stops,
+        color,
+        level,
+        top.max(0.0) as u32..bottom.max(0.0) as u32,
+    );
 }
 
 /// `color` over the top `h` pixels at the strength `stops` give from top (0)
 /// to bottom (1), with an ordered dither against banding; the rows in `skip`
 /// are left as they are.
-fn mask(c: &mut Canvas, h: f32, stops: &[(f32, f32)], color: Rgba, level: f32, skip: std::ops::Range<u32>) {
+fn mask(
+    c: &mut Canvas,
+    h: f32,
+    stops: &[(f32, f32)],
+    color: Rgba,
+    level: f32,
+    skip: std::ops::Range<u32>,
+) {
     const BAYER: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
     assert!(c.whole(), "the mask lies over a whole screen");
     let ink = [color.r as u32, color.g as u32, color.b as u32];
@@ -917,12 +1193,20 @@ fn mask(c: &mut Canvas, h: f32, stops: &[(f32, f32)], color: Rgba, level: f32, s
         // The dither shifts the opacity by under half a step, in a 4×4
         // pattern. Opacities run 0 to 256 so a shift divides by them.
         let k: [u32; 4] = std::array::from_fn(|i| {
-            let k = (a + BAYER[y as usize % 4][i] as f32 / 16.0 - 0.5).clamp(0.0, 255.0).round() as u32;
+            let k = (a + BAYER[y as usize % 4][i] as f32 / 16.0 - 0.5)
+                .clamp(0.0, 255.0)
+                .round() as u32;
             k + (k >> 7)
         });
         // Each pixel as a word, its red and blue mixed towards the ink in
         // one multiply, then its green; its alpha kept.
-        let lit: [(u32, u32, u32); 4] = k.map(|k| ((ink[0] | ink[2] << 16) * k + 0x0080_0080, ink[1] * k + 0x80, 256 - k));
+        let lit: [(u32, u32, u32); 4] = k.map(|k| {
+            (
+                (ink[0] | ink[2] << 16) * k + 0x0080_0080,
+                ink[1] * k + 0x80,
+                256 - k,
+            )
+        });
         let start = y as usize * row_len;
         for quad in c.data[start..start + row_len].as_chunks_mut::<16>().0 {
             for (px, &(lit_rb, lit_g, keep)) in quad.as_chunks_mut::<4>().0.iter_mut().zip(&lit) {
@@ -944,7 +1228,10 @@ fn ramp(stops: &[(f32, f32)], f: f32) -> f32 {
     if f >= last.0 {
         return last.1;
     }
-    let i = stops.iter().position(|s| s.0 > f).expect("f lies inside the stops");
+    let i = stops
+        .iter()
+        .position(|s| s.0 > f)
+        .expect("f lies inside the stops");
     let ((p0, a0), (p1, a1)) = (stops[i - 1], stops[i]);
     a0 + (a1 - a0) * (f - p0) / (p1 - p0)
 }
@@ -952,7 +1239,11 @@ fn ramp(stops: &[(f32, f32)], f: f32) -> f32 {
 /// The centre and radius of the round chip behind `<`.
 pub fn back_disc(t: &Theme) -> (f32, f32, f32) {
     let m = &t.m;
-    (m.back_x + m.back_w / 2.0 + m.dp(1.55), m.back_cy, m.dp(21.7))
+    (
+        m.back_x + m.back_w / 2.0 + m.dp(1.55),
+        m.back_cy,
+        m.dp(21.7),
+    )
 }
 
 /// The round chip behind `<` while the bar shows: a pale disc with a
@@ -965,10 +1256,17 @@ pub fn back_chip(t: &Theme) -> (Canvas, i32, i32) {
 /// Such a chip about the disc centred at (`cx`, `cy`) of radius `r`.
 fn chip(t: &Theme, (cx, cy, r): (f32, f32, f32)) -> (Canvas, i32, i32) {
     let m = &t.m;
-    let (fill, rim) = if t.dark { (Rgba::rgb(38, 38, 38), Rgba::rgb(62, 62, 62)) } else { (Rgba::rgb(248, 248, 248), Rgba::rgb(255, 255, 255)) };
+    let (fill, rim) = if t.dark {
+        (Rgba::rgb(38, 38, 38), Rgba::rgb(62, 62, 62))
+    } else {
+        (Rgba::rgb(248, 248, 248), Rgba::rgb(255, 255, 255))
+    };
     let spread = m.dp(7.0);
     let reach = r + spread;
-    let (x0, y0) = ((cx - reach).floor() as i32 - 1, (cy - reach).floor() as i32 - 1);
+    let (x0, y0) = (
+        (cx - reach).floor() as i32 - 1,
+        (cy - reach).floor() as i32 - 1,
+    );
     let size = (reach * 2.0).ceil() as u32 + 3;
     let mut c = Canvas::new(size, size);
     let (cx, cy) = (cx - x0 as f32, cy - y0 as f32);
@@ -993,13 +1291,39 @@ pub fn toast(c: &mut Canvas, t: &Theme, f: &Fonts, text: &str) {
     let m = &t.m;
     let px = m.sub_px;
     let (side, line_h) = (m.dp(20.0), m.dp(44.0));
-    let lines = wrap(c, &f.heading, text, px, m.w as f32 - m.margin * 2.0 - side * 2.0);
-    let widest = lines.iter().map(|line| c.text_width(&f.heading, line, px)).fold(0.0, f32::max);
-    let (w, h) = (widest + side * 2.0, line_h + m.sub_pitch * lines.len().saturating_sub(1) as f32);
+    let lines = wrap(
+        c,
+        &f.heading,
+        text,
+        px,
+        m.w as f32 - m.margin * 2.0 - side * 2.0,
+    );
+    let widest = lines
+        .iter()
+        .map(|line| c.text_width(&f.heading, line, px))
+        .fold(0.0, f32::max);
+    let (w, h) = (
+        widest + side * 2.0,
+        line_h + m.sub_pitch * lines.len().saturating_sub(1) as f32,
+    );
     let (x, y) = ((m.w as f32 - w) / 2.0, m.h as f32 - m.dp(120.0));
-    c.fill_round_rect(x, y, w, h, line_h / 2.0, Rgba::rgb(30, 30, 30).with_alpha(235));
+    c.fill_round_rect(
+        x,
+        y,
+        w,
+        h,
+        line_h / 2.0,
+        Rgba::rgb(30, 30, 30).with_alpha(235),
+    );
     for (k, line) in lines.iter().enumerate() {
-        c.text_center(&f.heading, line, m.w as f32 / 2.0, y + line_h / 2.0 + m.sub_pitch * k as f32, px, Rgba::rgb(255, 255, 255));
+        c.text_center(
+            &f.heading,
+            line,
+            m.w as f32 / 2.0,
+            y + line_h / 2.0 + m.sub_pitch * k as f32,
+            px,
+            Rgba::rgb(255, 255, 255),
+        );
     }
 }
 
@@ -1007,7 +1331,17 @@ pub fn toast(c: &mut Canvas, t: &Theme, f: &Fonts, text: &str) {
 /// first centred on `cy` and each `pitch` under the one before. Returns
 /// how far the last line is under the first.
 #[allow(clippy::too_many_arguments)]
-pub fn centred(c: &mut Canvas, face: &Face, text: &str, cx: f32, cy: f32, px: f32, pitch: f32, color: Rgba, max_w: f32) -> f32 {
+pub fn centred(
+    c: &mut Canvas,
+    face: &Face,
+    text: &str,
+    cx: f32,
+    cy: f32,
+    px: f32,
+    pitch: f32,
+    color: Rgba,
+    max_w: f32,
+) -> f32 {
     let lines = wrap(c, face, text, px, max_w);
     for (k, line) in lines.iter().enumerate() {
         c.text_center(face, line, cx, cy + pitch * k as f32, px, color);
@@ -1019,7 +1353,14 @@ pub fn centred(c: &mut Canvas, face: &Face, text: &str, cx: f32, cy: f32, px: f3
 /// its icon and words: those are laid over it from [`search_words`].
 pub fn search_bar(c: &mut Canvas, t: &Theme, r: Rect, level: f32) {
     let ink = t.pal.search;
-    c.fill_round_rect(r.x, r.y, r.w, r.h, r.h / 2.0, ink.with_alpha((ink.a as f32 * level).round() as u8));
+    c.fill_round_rect(
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        r.h / 2.0,
+        ink.with_alpha((ink.a as f32 * level).round() as u8),
+    );
 }
 
 /// The icon and words of the home page's search bar standing at `bar`, on
@@ -1028,15 +1369,33 @@ pub fn search_bar(c: &mut Canvas, t: &Theme, r: Rect, level: f32) {
 pub fn search_words(t: &Theme, f: &Fonts, bar: Rect, placeholder: &str) -> Canvas {
     let m = &t.m;
     let (left, top) = (bar.x.floor(), bar.y.floor());
-    let mut c = Canvas::new((bar.x + bar.w - left).ceil() as u32, (bar.y + bar.h - top).ceil() as u32);
+    let mut c = Canvas::new(
+        (bar.x + bar.w - left).ceil() as u32,
+        (bar.y + bar.h - top).ceil() as u32,
+    );
     let (x, cy) = (bar.x - left, bar.y - top + bar.h / 2.0);
     let (icx, icy, sw) = (x + m.dp(22.3), cy - m.dp(2.0), m.dp(1.45));
     let ring = m.dp(6.6);
     c.stroke_circle(icx, icy, ring, sw, t.pal.search_icon);
     let k = ring * std::f32::consts::FRAC_1_SQRT_2;
-    c.line(icx + k, icy + k, icx + m.dp(9.9), icy + m.dp(10.0), sw, t.pal.search_icon);
+    c.line(
+        icx + k,
+        icy + k,
+        icx + m.dp(9.9),
+        icy + m.dp(10.0),
+        sw,
+        t.pal.search_icon,
+    );
     // The placeholder is set at the row-title size and weight, in grey.
-    c.text_vc(&f.heading, placeholder, x + m.search_text_inset, cy, m.row_title_px, t.pal.placeholder, None);
+    c.text_vc(
+        &f.heading,
+        placeholder,
+        x + m.search_text_inset,
+        cy,
+        m.row_title_px,
+        t.pal.placeholder,
+        None,
+    );
     c
 }
 
@@ -1076,7 +1435,10 @@ pub fn search_layout(t: &Theme) -> (Rect, Rect) {
     let m = &t.m;
     let (top, d) = (m.dp(SEARCH_TOP_DP), m.search_h);
     let cancel = Rect::new(m.w as f32 - m.dp(CANCEL_RIGHT_DP) - d, top, d, d);
-    (Rect::new(m.margin, top, cancel.x - m.dp(CANCEL_GAP_DP) - m.margin, d), cancel)
+    (
+        Rect::new(m.margin, top, cancel.x - m.dp(CANCEL_GAP_DP) - m.margin, d),
+        cancel,
+    )
 }
 
 /// The round button that leaves the search, in `r`.
@@ -1098,7 +1460,9 @@ pub fn back_held(c: &mut Canvas, t: &Theme) {
     let (cx, cy, r) = back_disc(t);
     c.fill_circle(cx, cy, r, t.pal.button_press);
     let side = (r * 2.0).ceil() as u32 + 2;
-    let arrow = Sprite::capture(cx - r - 1.0, cy - r - 1.0, side, side, |c, dx, dy| arrow_at(c, t, dx, dy, Rgba::rgb(0, 0, 0)));
+    let arrow = Sprite::capture(cx - r - 1.0, cy - r - 1.0, side, side, |c, dx, dy| {
+        arrow_at(c, t, dx, dy, Rgba::rgb(0, 0, 0))
+    });
     arrow.draw(c, 0.0, 0.0, t.pal.text, BACK_HELD_ALPHA as f32 / 255.0);
 }
 
@@ -1161,7 +1525,9 @@ pub fn button_held(c: &mut Canvas, t: &Theme, glyph: Glyph) {
     let (cx, cy, r) = button_disc(t);
     c.fill_circle(cx, cy, r, t.pal.button_press);
     let side = (r * 2.0).ceil() as u32 + 2;
-    let art = Sprite::capture(cx - r - 1.0, cy - r - 1.0, side, side, |c, dx, dy| glyph_at(c, t, glyph, dx, dy, Rgba::rgb(0, 0, 0)));
+    let art = Sprite::capture(cx - r - 1.0, cy - r - 1.0, side, side, |c, dx, dy| {
+        glyph_at(c, t, glyph, dx, dy, Rgba::rgb(0, 0, 0))
+    });
     art.draw(c, 0.0, 0.0, t.pal.text, BACK_HELD_ALPHA as f32 / 255.0);
 }
 
@@ -1169,9 +1535,20 @@ pub fn button_held(c: &mut Canvas, t: &Theme, glyph: Glyph) {
 /// darker and its cross lighter, inked once where its strokes cross.
 pub fn cancel_held(c: &mut Canvas, t: &Theme, r: Rect) {
     draw_disc(c, r, over(t.pal.button_press, t.pal.search));
-    let cross = Sprite::capture(r.x, r.y, r.w.ceil() as u32 + 1, r.h.ceil() as u32 + 1, |c, dx, dy| {
-        draw_cross(c, t, Rect::new(r.x + dx, r.y + dy, r.w, r.h), Rgba::rgb(0, 0, 0))
-    });
+    let cross = Sprite::capture(
+        r.x,
+        r.y,
+        r.w.ceil() as u32 + 1,
+        r.h.ceil() as u32 + 1,
+        |c, dx, dy| {
+            draw_cross(
+                c,
+                t,
+                Rect::new(r.x + dx, r.y + dy, r.w, r.h),
+                Rgba::rgb(0, 0, 0),
+            )
+        },
+    );
     cross.draw(c, 0.0, 0.0, t.pal.text, CANCEL_HELD_ALPHA as f32 / 255.0);
 }
 
@@ -1201,8 +1578,12 @@ pub fn cancel_art(t: &Theme) -> (Sprite, Sprite) {
     let pad = blur_room(t);
     let (x, y, side) = (r.x - pad, r.y - pad, (r.w + pad * 2.0).ceil() as u32);
     let ink = Rgba::rgb(0, 0, 0);
-    let disc = Sprite::capture(x, y, side, side, |c, dx, dy| draw_disc(c, Rect::new(r.x + dx, r.y + dy, r.w, r.h), ink));
-    let cross = Sprite::capture(x, y, side, side, |c, dx, dy| draw_cross(c, t, Rect::new(r.x + dx, r.y + dy, r.w, r.h), ink));
+    let disc = Sprite::capture(x, y, side, side, |c, dx, dy| {
+        draw_disc(c, Rect::new(r.x + dx, r.y + dy, r.w, r.h), ink)
+    });
+    let cross = Sprite::capture(x, y, side, side, |c, dx, dy| {
+        draw_cross(c, t, Rect::new(r.x + dx, r.y + dy, r.w, r.h), ink)
+    });
     (disc, cross)
 }
 
@@ -1216,12 +1597,25 @@ pub fn search_capsule(c: &mut Canvas, t: &Theme, f: &Fonts, r: Rect, placeholder
 /// `cy`: the text typed so far, or the placeholder, a button that clears
 /// the text, and the cursor where the typing goes.
 #[allow(clippy::too_many_arguments)]
-pub fn search_field(c: &mut Canvas, t: &Theme, f: &Fonts, x: f32, w: f32, cy: f32, text: &str, placeholder: &str) -> SearchField {
+pub fn search_field(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    x: f32,
+    w: f32,
+    cy: f32,
+    text: &str,
+    placeholder: &str,
+) -> SearchField {
     let (field, clear, at) = draw_search_field(c, t, f, x, w, cy, text, placeholder, false);
     let caret = caret_over(at, |art, dx, dy| {
         draw_search_field(art, t, f, x - dx, w, cy - dy, text, placeholder, true);
     });
-    SearchField { field, clear, caret }
+    SearchField {
+        field,
+        clear,
+        caret,
+    }
 }
 
 /// Draw the search field, with its cursor if `caret`; returns where the
@@ -1246,7 +1640,14 @@ fn draw_search_field(
     let ring = m.dp(6.6);
     c.stroke_circle(icx, icy, ring, sw, t.pal.search_icon);
     let k = ring * std::f32::consts::FRAC_1_SQRT_2;
-    c.line(icx + k, icy + k, icx + m.dp(9.9), icy + m.dp(10.0), sw, t.pal.search_icon);
+    c.line(
+        icx + k,
+        icy + k,
+        icx + m.dp(9.9),
+        icy + m.dp(10.0),
+        sw,
+        t.pal.search_icon,
+    );
     let tx = x + m.search_text_inset;
     let clear_d = m.dp(18.0);
     let room = w - m.search_text_inset - clear_d - m.dp(24.0);
@@ -1296,7 +1697,14 @@ pub fn caret_rect(t: &Theme, x: f32, top: f32, bottom: f32) -> Rect {
 
 /// Draw a text cursor in `at`.
 pub fn draw_caret(c: &mut Canvas, t: &Theme, at: Rect) {
-    c.fill_round_rect(at.x, at.y, at.w, at.h, t.m.dp(CARET_RADIUS_DP), t.pal.accent);
+    c.fill_round_rect(
+        at.x,
+        at.y,
+        at.w,
+        at.h,
+        t.m.dp(CARET_RADIUS_DP),
+        t.pal.accent,
+    );
 }
 
 /// The stretch of a field round the cursor at `at`, drawn by `draw` into a
@@ -1314,7 +1722,15 @@ pub fn caret_over(at: Rect, draw: impl FnOnce(&mut Canvas, f32, f32)) -> Caret {
 pub fn section(c: &mut Canvas, t: &Theme, f: &Fonts, prev_bottom: f32, label: &str) -> f32 {
     let m = &t.m;
     let ink_top = prev_bottom + m.section_label_top;
-    c.text_top(&f.label, label, m.margin + m.inner, ink_top, m.label_px, t.pal.section, None);
+    c.text_top(
+        &f.label,
+        label,
+        m.margin + m.inner,
+        ink_top,
+        m.label_px,
+        t.pal.section,
+        None,
+    );
     prev_bottom + m.section_block
 }
 
@@ -1350,7 +1766,10 @@ pub fn paragraph(c: &mut Canvas, t: &Theme, f: &Fonts, y: f32, text: &str) -> f3
         if k > 0 {
             top += m.dp(12.0);
         }
-        let lines: Vec<String> = para.lines().flat_map(|l| wrap(c, &f.body, l, m.sub_px, max_w)).collect();
+        let lines: Vec<String> = para
+            .lines()
+            .flat_map(|l| wrap(c, &f.body, l, m.sub_px, max_w))
+            .collect();
         for line in &lines {
             c.text_top(&f.body, line, x, top, m.sub_px, t.pal.info, None);
             top += m.sub_pitch;
@@ -1373,9 +1792,21 @@ pub fn dock_bar(t: &Theme, f: &Fonts, bg: Rgba, labels: &[&str]) -> (Canvas, Vec
     let mut rects = Vec::new();
     for (k, label) in labels.iter().enumerate() {
         let x = m.margin + k as f32 * (w + gap);
-        let (fill, ink) = if k + 1 == labels.len() { (t.pal.accent, Rgba::rgb(255, 255, 255)) } else { (t.pal.search, t.pal.text) };
+        let (fill, ink) = if k + 1 == labels.len() {
+            (t.pal.accent, Rgba::rgb(255, 255, 255))
+        } else {
+            (t.pal.search, t.pal.text)
+        };
         c.fill_round_rect(x, pad, w, h, h / 2.0, fill);
-        c.text_center_in(&f.heading, label, x + w / 2.0, pad + h / 2.0, m.row_title_px, ink, w - h / 2.0);
+        c.text_center_in(
+            &f.heading,
+            label,
+            x + w / 2.0,
+            pad + h / 2.0,
+            m.row_title_px,
+            ink,
+            w - h / 2.0,
+        );
         rects.push(Rect::new(x, pad, w, h));
     }
     (c, rects)
@@ -1394,7 +1825,15 @@ pub fn text_field(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, text: &str) ->
 
 /// Draw the text field's card from `x0`, `top`, with its cursor if
 /// `caret`; returns where the cursor is.
-fn draw_text_field(c: &mut Canvas, t: &Theme, f: &Fonts, x0: f32, top: f32, text: &str, caret: bool) -> Rect {
+fn draw_text_field(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    x0: f32,
+    top: f32,
+    text: &str,
+    caret: bool,
+) -> Rect {
     let m = &t.m;
     let (w, h) = (m.w as f32 - m.margin * 2.0, m.dp(56.0));
     c.fill_round_rect(x0, top, w, h, m.card_radius, t.pal.card);
@@ -1406,7 +1845,13 @@ fn draw_text_field(c: &mut Canvas, t: &Theme, f: &Fonts, x0: f32, top: f32, text
         rest.next();
         shown = rest.as_str();
     }
-    let at = cursor(t, f, x + c.text_width(&f.heading, shown, px), top + h / 2.0, px);
+    let at = cursor(
+        t,
+        f,
+        x + c.text_width(&f.heading, shown, px),
+        top + h / 2.0,
+        px,
+    );
     if caret {
         c.fill_round_rect(at.x, at.y, at.w, at.h, m.dp(CARET_RADIUS_DP), t.pal.accent);
     }
@@ -1420,7 +1865,15 @@ pub fn button(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, label: &str) -> Re
     let m = &t.m;
     let (x, w, h) = (m.margin, m.w as f32 - m.margin * 2.0, m.dp(48.0));
     c.fill_round_rect(x, top, w, h, h / 2.0, t.pal.accent);
-    c.text_center_in(&f.heading, label, x + w / 2.0, top + h / 2.0, m.row_title_px, Rgba::rgb(255, 255, 255), w - h / 2.0);
+    c.text_center_in(
+        &f.heading,
+        label,
+        x + w / 2.0,
+        top + h / 2.0,
+        m.row_title_px,
+        Rgba::rgb(255, 255, 255),
+        w - h / 2.0,
+    );
     Rect::new(x, top, w, h)
 }
 
@@ -1436,7 +1889,9 @@ pub enum Trail<'a> {
     Check(bool),
     /// A WLAN network's padlock, where joining it takes a password, and the
     /// round button that opens its details.
-    Network { locked: bool },
+    Network {
+        locked: bool,
+    },
     /// The value chosen, and the arrows up and down that say the row opens
     /// a list of choices.
     Choice(&'a str),
@@ -1458,7 +1913,15 @@ pub struct Row<'a> {
 
 impl<'a> Row<'a> {
     pub fn new(title: &'a str) -> Self {
-        Row { icon: None, fan: None, title, tag: None, sub: None, trail: Trail::Arrow, tint: None }
+        Row {
+            icon: None,
+            fan: None,
+            title,
+            tag: None,
+            sub: None,
+            trail: Trail::Arrow,
+            tint: None,
+        }
     }
     pub fn icon(mut self, color: Rgba, icon: Icon) -> Self {
         self.icon = Some((color, icon));
@@ -1507,7 +1970,15 @@ impl Layout {
         let first = cy - (self.value_lines.len() as f32 - 1.0) * m.sub_pitch / 2.0;
         for (k, line) in self.value_lines.iter().enumerate() {
             let w = c.text_width(&f.value, line, m.sub_px).min(self.value_w);
-            c.text_vc(&f.value, line, right - w, first + m.sub_pitch * k as f32, m.sub_px, color, self.value_max);
+            c.text_vc(
+                &f.value,
+                line,
+                right - w,
+                first + m.sub_pitch * k as f32,
+                m.sub_px,
+                color,
+                self.value_max,
+            );
         }
     }
 
@@ -1559,7 +2030,10 @@ fn layout(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> Layout {
         Trail::Badge(_) => m.inner + m.badge_w + m.value_gap,
         Trail::Check(_) => m.inner + m.dp(24.0) + m.value_gap,
         Trail::Network { locked } => {
-            m.inner + m.dp(ROUND_D) + m.value_gap + if locked { m.dp(LOCK_GAP + LOCK_W) } else { 0.0 }
+            m.inner
+                + m.dp(ROUND_D)
+                + m.value_gap
+                + if locked { m.dp(LOCK_GAP + LOCK_W) } else { 0.0 }
         }
         Trail::Choice(_) => m.dp(UPDOWN_RIGHT + UPDOWN_W + UPDOWN_VALUE_GAP) + m.value_gap,
     };
@@ -1578,12 +2052,19 @@ fn layout(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> Layout {
             let narrowest = if one_line {
                 title_w
             } else {
-                let word = r.title.split(|ch: char| !in_word(ch)).map(width).fold(0.0, f32::max);
+                let word = r
+                    .title
+                    .split(|ch: char| !in_word(ch))
+                    .map(width)
+                    .fold(0.0, f32::max);
                 title_w.min(word.max(room / 3.0))
             };
             let has = (room - narrowest).max(room / 2.0);
             let lines = fitted(c, &f.value, s, m.sub_px, has);
-            let widest = lines.iter().map(|line| c.text_width(&f.value, line, m.sub_px)).fold(0.0, f32::max);
+            let widest = lines
+                .iter()
+                .map(|line| c.text_width(&f.value, line, m.sub_px))
+                .fold(0.0, f32::max);
             if widest > has {
                 (lines, has, Some(has))
             } else {
@@ -1593,9 +2074,25 @@ fn layout(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> Layout {
         _ => (Vec::new(), 0.0, None),
     };
     let text_max = card_w - text_x - (end + value_w);
-    let title_lines = if one_line { vec![r.title.to_string()] } else { fitted(c, &f.heading, r.title, m.row_title_px, text_max) };
-    let sub_lines = r.sub.map(|s| wrap(c, &f.body, s, m.sub_px, text_max)).unwrap_or_default();
-    let mut lay = Layout { text_x, text_max, title_lines, value_lines, value_w, value_max, sub_lines, h: 0.0 };
+    let title_lines = if one_line {
+        vec![r.title.to_string()]
+    } else {
+        fitted(c, &f.heading, r.title, m.row_title_px, text_max)
+    };
+    let sub_lines = r
+        .sub
+        .map(|s| wrap(c, &f.body, s, m.sub_px, text_max))
+        .unwrap_or_default();
+    let mut lay = Layout {
+        text_x,
+        text_max,
+        title_lines,
+        value_lines,
+        value_w,
+        value_max,
+        sub_lines,
+        h: 0.0,
+    };
     lay.h = if lay.title_lines.len() == 1 && lay.sub_lines.is_empty() {
         if r.fan.is_some() {
             m.dp(FAN_ROW_H)
@@ -1615,7 +2112,9 @@ fn layout(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> Layout {
 
 /// The room a row's tag takes after its title.
 fn tag_room(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> f32 {
-    r.tag.map_or(0.0, |tag| c.text_width(&f.body, tag, t.m.dp(TAG_PX)) + t.m.dp(TAG_PAD * 2.0 + TAG_GAP))
+    r.tag.map_or(0.0, |tag| {
+        c.text_width(&f.body, tag, t.m.dp(TAG_PX)) + t.m.dp(TAG_PAD * 2.0 + TAG_GAP)
+    })
 }
 
 fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f32, tone: &Tone) {
@@ -1627,7 +2126,15 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
         icons::tile(c, t, card_x + m.inner, cy - m.icon / 2.0, color, icon);
     }
     if let Some(level) = r.fan {
-        wlan_fan(c, card_x + m.dp(FAN_CX), cy, m.dp(FAN_R), level, tone.text, tone.faint);
+        wlan_fan(
+            c,
+            card_x + m.dp(FAN_CX),
+            cy,
+            m.dp(FAN_R),
+            level,
+            tone.text,
+            tone.faint,
+        );
     }
     let tx = card_x + lay.text_x;
     let color = r.tint.unwrap_or(tone.text);
@@ -1636,7 +2143,15 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
     let title_max = Some(title_room);
     let (tt, tb) = f.heading.ink(m.row_title_px);
     let title_cy = if lay.title_lines.len() == 1 && lay.sub_lines.is_empty() {
-        c.text_vc(&f.heading, r.title, tx, cy, m.row_title_px, color, title_max);
+        c.text_vc(
+            &f.heading,
+            r.title,
+            tx,
+            cy,
+            m.row_title_px,
+            color,
+            title_max,
+        );
         cy
     } else {
         let ink_top = cy - lay.block(t, f) / 2.0;
@@ -1645,7 +2160,15 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
         // A title on lines of its own has been fitted to them already.
         let line_max = title_max.filter(|_| lay.title_lines.len() == 1);
         for line in &lay.title_lines {
-            c.text_top(&f.heading, line, tx, line_top, m.row_title_px, color, line_max);
+            c.text_top(
+                &f.heading,
+                line,
+                tx,
+                line_top,
+                m.row_title_px,
+                color,
+                line_max,
+            );
             line_top += pitch;
         }
         let mut st_top = line_top - pitch + (tb - tt) + m.sub_gap;
@@ -1656,14 +2179,30 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
         ink_top + (tb - tt) / 2.0
     };
     if let Some(tag) = r.tag {
-        let title_w = c.text_width(&f.heading, r.title, m.row_title_px).min(title_room);
+        let title_w = c
+            .text_width(&f.heading, r.title, m.row_title_px)
+            .min(title_room);
         let x = tx + title_w + m.dp(TAG_GAP);
         let w = c.text_width(&f.body, tag, m.dp(TAG_PX)) + m.dp(TAG_PAD * 2.0);
         let h = m.dp(TAG_H);
         let (stroke, radius) = (m.dp(TAG_STROKE), m.dp(TAG_RADIUS));
         c.fill_round_rect(x, title_cy - h / 2.0, w, h, radius, tone.value);
-        c.fill_round_rect(x + stroke, title_cy - h / 2.0 + stroke, w - stroke * 2.0, h - stroke * 2.0, radius - stroke, tone.card);
-        c.text_center(&f.body, tag, x + w / 2.0, title_cy, m.dp(TAG_PX), tone.value);
+        c.fill_round_rect(
+            x + stroke,
+            title_cy - h / 2.0 + stroke,
+            w - stroke * 2.0,
+            h - stroke * 2.0,
+            radius - stroke,
+            tone.card,
+        );
+        c.text_center(
+            &f.body,
+            tag,
+            x + w / 2.0,
+            title_cy,
+            m.dp(TAG_PX),
+            tone.value,
+        );
     }
     match r.trail {
         Trail::None => {}
@@ -1684,21 +2223,42 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
         Trail::Check(on) => check_circle(c, t, right - m.inner - m.dp(12.0), cy, on),
         Trail::Network { locked } => {
             let round = round_button(t, Rect::new(card_x, top, right - card_x, lay.h));
-            let (rcx, rcy, rr) = (round.x + round.w / 2.0, round.y + round.h / 2.0, round.w / 2.0);
+            let (rcx, rcy, rr) = (
+                round.x + round.w / 2.0,
+                round.y + round.h / 2.0,
+                round.w / 2.0,
+            );
             c.fill_circle(rcx, rcy, rr, tone.round);
-            let (w, h, sw) = (m.dp(ROUND_MARK_W), m.dp(ROUND_MARK_H), m.dp(ROUND_MARK_STROKE));
+            let (w, h, sw) = (
+                m.dp(ROUND_MARK_W),
+                m.dp(ROUND_MARK_H),
+                m.dp(ROUND_MARK_STROKE),
+            );
             let x0 = rcx - w / 2.0 + sw / 2.0;
             let x1 = rcx + w / 2.0 - sw / 2.0;
             c.line(x0, rcy - h / 2.0 + sw / 2.0, x1, rcy, sw, tone.round_mark);
             c.line(x1, rcy, x0, rcy + h / 2.0 - sw / 2.0, sw, tone.round_mark);
             if locked {
-                padlock(c, round.x - m.dp(LOCK_GAP + LOCK_W / 2.0), cy, m.dp(LOCK_H), tone.value);
+                padlock(
+                    c,
+                    round.x - m.dp(LOCK_GAP + LOCK_W / 2.0),
+                    cy,
+                    m.dp(LOCK_H),
+                    tone.value,
+                );
             }
         }
         Trail::Choice(_) => {
             let arrows = right - m.dp(UPDOWN_RIGHT);
             updown(c, t, arrows, cy, tone.updown);
-            lay.draw_value(c, t, f, arrows - m.dp(UPDOWN_W + UPDOWN_VALUE_GAP), cy, tone.value);
+            lay.draw_value(
+                c,
+                t,
+                f,
+                arrows - m.dp(UPDOWN_W + UPDOWN_VALUE_GAP),
+                cy,
+                tone.value,
+            );
         }
     }
 }
@@ -1717,7 +2277,12 @@ const UPDOWN_VALUE_GAP: f32 = 9.0;
 /// centred on `cy`.
 fn updown(c: &mut Canvas, t: &Theme, right: f32, cy: f32, color: Rgba) {
     let m = &t.m;
-    let (w, h, gap, sw) = (m.dp(UPDOWN_W), m.dp(UPDOWN_H), m.dp(UPDOWN_GAP), m.dp(UPDOWN_STROKE));
+    let (w, h, gap, sw) = (
+        m.dp(UPDOWN_W),
+        m.dp(UPDOWN_H),
+        m.dp(UPDOWN_GAP),
+        m.dp(UPDOWN_STROKE),
+    );
     let (x0, mid, x1) = (right - w + sw / 2.0, right - w / 2.0, right - sw / 2.0);
     let (up, down) = (cy - gap / 2.0 - h, cy + gap / 2.0);
     let (top, foot) = (sw / 2.0, h - sw / 2.0);
@@ -1750,12 +2315,30 @@ const CHOICES_SHADOW: f32 = 10.7;
 /// one `chosen` in the accent with a tick, and the one `held` darkened
 /// while a finger holds it. Returns each choice's rect.
 #[allow(clippy::too_many_arguments)]
-pub fn choices(c: &mut Canvas, t: &Theme, f: &Fonts, row: Rect, names: &[&str], chosen: Option<usize>, held: Option<usize>) -> Vec<Rect> {
+pub fn choices(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    row: Rect,
+    names: &[&str],
+    chosen: Option<usize>,
+    held: Option<usize>,
+) -> Vec<Rect> {
     let m = &t.m;
-    let (w, item, pad, r) = (m.dp(CHOICES_W), m.dp(CHOICE_H), m.dp(CHOICES_PAD), m.dp(CHOICES_RADIUS));
-    let (x, y) = (row.x + row.w - m.dp(CHOICES_RIGHT) - w, row.y + m.dp(CHOICES_DROP));
+    let (w, item, pad, r) = (
+        m.dp(CHOICES_W),
+        m.dp(CHOICE_H),
+        m.dp(CHOICES_PAD),
+        m.dp(CHOICES_RADIUS),
+    );
+    let (x, y) = (
+        row.x + row.w - m.dp(CHOICES_RIGHT) - w,
+        row.y + m.dp(CHOICES_DROP),
+    );
     let h = pad * 2.0 + item * names.len() as f32;
-    let rects: Vec<Rect> = (0..names.len()).map(|i| Rect::new(x, y + pad + item * i as f32, w, item)).collect();
+    let rects: Vec<Rect> = (0..names.len())
+        .map(|i| Rect::new(x, y + pad + item * i as f32, w, item))
+        .collect();
     c.shadow_round_rect(x, y, w, h, r, m.dp(CHOICES_SHADOW), t.pal.shadow);
     let (popup, darker) = (t.pal.popup, over(t.pal.row_press, t.pal.popup));
     let held = held.map(|i| rects[i]);
@@ -1765,8 +2348,20 @@ pub fn choices(c: &mut Canvas, t: &Theme, f: &Fonts, row: Rect, names: &[&str], 
     });
     for (i, (name, at)) in names.iter().zip(&rects).enumerate() {
         let cy = at.y + at.h / 2.0;
-        let ink = if chosen == Some(i) { t.pal.accent } else { t.pal.text };
-        c.text_vc(&f.heading, name, x + m.dp(CHOICE_TEXT_X), cy, m.dp(CHOICE_PX), ink, None);
+        let ink = if chosen == Some(i) {
+            t.pal.accent
+        } else {
+            t.pal.text
+        };
+        c.text_vc(
+            &f.heading,
+            name,
+            x + m.dp(CHOICE_TEXT_X),
+            cy,
+            m.dp(CHOICE_PX),
+            ink,
+            None,
+        );
         if chosen == Some(i) {
             tick(c, t, x + w - m.dp(TICK_RIGHT), cy, t.pal.accent);
         }
@@ -1788,7 +2383,12 @@ fn tick(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, color: Rgba) {
 /// the network's details apart from the row.
 pub fn round_button(t: &Theme, row: Rect) -> Rect {
     let d = t.m.dp(ROUND_D);
-    Rect::new(row.x + row.w - t.m.inner - d, row.y + row.h / 2.0 - d / 2.0, d, d)
+    Rect::new(
+        row.x + row.w - t.m.inner - d,
+        row.y + row.h / 2.0 - d / 2.0,
+        d,
+        d,
+    )
 }
 
 // What a WLAN network's row holds, as the stock WLAN page lays it out, in
@@ -1818,7 +2418,14 @@ pub fn list(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row]) -> Blo
 }
 
 /// [`list`] in the given colours.
-pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], tone: &Tone) -> Block {
+pub fn list_toned(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    top: f32,
+    rows: &[Row],
+    tone: &Tone,
+) -> Block {
     let m = &t.m;
     let lays: Vec<Layout> = rows.iter().map(|r| layout(c, t, f, r)).collect();
     let h: f32 = lays.iter().map(|l| l.h).sum();
@@ -1831,12 +2438,23 @@ pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], 
         rects.push(Rect::new(m.margin, y, w, l.h));
         y += l.h;
     }
-    Block { bottom: top + h, rows: rects }
+    Block {
+        bottom: top + h,
+        rows: rects,
+    }
 }
 
 /// Account-style card: avatar, name and detail, then optional rows. The
 /// first rect returned covers the name row.
-pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, sub: &str, rows: &[Row]) -> Block {
+pub fn device_card(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    top: f32,
+    title: &str,
+    sub: &str,
+    rows: &[Row],
+) -> Block {
     let m = &t.m;
     let lays: Vec<Layout> = rows.iter().map(|r| layout(c, t, f, r)).collect();
     let h = m.account_row_h + lays.iter().map(|l| l.h).sum::<f32>();
@@ -1854,8 +2472,24 @@ pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, 
     let (st, sb) = f.body.ink(m.sub_px);
     let block = (tb - tt) + m.sub_gap + (sb - st);
     let ink_top = cy - block / 2.0;
-    c.text_top(&f.heading, title, tx, ink_top, m.account_title_px, t.pal.text, None);
-    c.text_top(&f.body, sub, tx, ink_top + (tb - tt) + m.sub_gap, m.sub_px, t.pal.subtitle, None);
+    c.text_top(
+        &f.heading,
+        title,
+        tx,
+        ink_top,
+        m.account_title_px,
+        t.pal.text,
+        None,
+    );
+    c.text_top(
+        &f.body,
+        sub,
+        tx,
+        ink_top + (tb - tt) + m.sub_gap,
+        m.sub_px,
+        t.pal.subtitle,
+        None,
+    );
     chevron(c, t, right - m.chevron_inset, cy, t.pal.chevron);
 
     let tone = Tone::page(t);
@@ -1866,14 +2500,24 @@ pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, 
         rects.push(Rect::new(card_x, y, right - card_x, l.h));
         y += l.h;
     }
-    Block { bottom: top + h, rows: rects }
+    Block {
+        bottom: top + h,
+        rows: rects,
+    }
 }
 
 pub fn switch(c: &mut Canvas, t: &Theme, right: f32, cy: f32, on: bool) {
     let m = &t.m;
     let (w, h, k) = (m.switch_w, m.switch_h, m.knob);
     let x = right - w;
-    c.fill_round_rect(x, cy - h / 2.0, w, h, h / 2.0, if on { t.pal.accent } else { t.pal.switch_off });
+    c.fill_round_rect(
+        x,
+        cy - h / 2.0,
+        w,
+        h,
+        h / 2.0,
+        if on { t.pal.accent } else { t.pal.switch_off },
+    );
     let kx = if on { right - h / 2.0 } else { x + h / 2.0 };
     c.fill_circle(kx, cy, k / 2.0, Rgba::rgb(255, 255, 255));
 }
@@ -1886,7 +2530,12 @@ pub fn slider(c: &mut Canvas, t: &Theme, x: f32, top: f32, w: f32, value: f32) {
     c.fill_round_rect(x, top, w, h, h / 2.0, t.pal.track);
     let fw = (w * value.clamp(0.0, 1.0)).max(h);
     c.fill_round_rect(x, top, fw, h, h / 2.0, t.pal.accent);
-    c.fill_circle(x + fw - h / 2.0, top + h / 2.0, m.slider_knob / 2.0, Rgba::rgb(255, 255, 255));
+    c.fill_circle(
+        x + fw - h / 2.0,
+        top + h / 2.0,
+        m.slider_knob / 2.0,
+        Rgba::rgb(255, 255, 255),
+    );
 }
 
 /// Where a slider card ends, its track, and the row under the slider.
@@ -1906,7 +2555,16 @@ pub enum Caption {
 
 /// Card with a monochrome icon caption, a slider, and an optional row below.
 #[allow(clippy::too_many_arguments)]
-pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Caption, label: &str, value: f32, below: Option<Row>) -> SliderBlock {
+pub fn slider_card(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    top: f32,
+    caption: Caption,
+    label: &str,
+    value: f32,
+    below: Option<Row>,
+) -> SliderBlock {
     let m = &t.m;
     let (card_x, right) = (m.margin, m.w as f32 - m.margin);
     let below_lay = below.as_ref().map(|r| layout(c, t, f, r));
@@ -1927,15 +2585,35 @@ pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Capt
             for k in 0..8 {
                 let a = k as f32 * FRAC_PI_4;
                 let (ux, uy) = (a.cos(), a.sin());
-                c.line(scx + ux * m.dp(8.3), lcy + uy * m.dp(8.3), scx + ux * m.dp(8.9), lcy + uy * m.dp(8.9), m.dp(2.0), t.pal.mono_icon);
+                c.line(
+                    scx + ux * m.dp(8.3),
+                    lcy + uy * m.dp(8.3),
+                    scx + ux * m.dp(8.9),
+                    lcy + uy * m.dp(8.9),
+                    m.dp(2.0),
+                    t.pal.mono_icon,
+                );
             }
         }
         Caption::Vibrate => {
-            c.stroke_round_rect(scx - m.dp(4.3), lcy - m.dp(7.7), m.dp(8.6), m.dp(15.4), m.dp(2.2), m.dp(2.0), t.pal.mono_icon);
+            c.stroke_round_rect(
+                scx - m.dp(4.3),
+                lcy - m.dp(7.7),
+                m.dp(8.6),
+                m.dp(15.4),
+                m.dp(2.2),
+                m.dp(2.0),
+                t.pal.mono_icon,
+            );
             for side in [-1.0f32, 1.0] {
                 let x = scx + side * m.dp(8.0);
                 let (out, step) = (side * m.dp(1.7), m.dp(3.2));
-                let ys = [lcy - step * 1.5, lcy - step * 0.5, lcy + step * 0.5, lcy + step * 1.5];
+                let ys = [
+                    lcy - step * 1.5,
+                    lcy - step * 0.5,
+                    lcy + step * 0.5,
+                    lcy + step * 1.5,
+                ];
                 for (k, pair) in ys.windows(2).enumerate() {
                     let (a, b) = if k % 2 == 0 { (0.0, out) } else { (out, 0.0) };
                     c.line(x + a, pair[0], x + b, pair[1], m.dp(1.8), t.pal.mono_icon);
@@ -1944,8 +2622,21 @@ pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Capt
         }
     }
     // The caption is set like the account name, in the softer text colour.
-    c.text_vc(&f.heading, label, card_x + m.dp(53.7), lcy, m.account_title_px, t.pal.info, None);
-    let track = Rect::new(card_x + m.inner, slider_top, right - card_x - m.inner * 2.0, m.slider_h);
+    c.text_vc(
+        &f.heading,
+        label,
+        card_x + m.dp(53.7),
+        lcy,
+        m.account_title_px,
+        t.pal.info,
+        None,
+    );
+    let track = Rect::new(
+        card_x + m.inner,
+        slider_top,
+        right - card_x - m.inner * 2.0,
+        m.slider_h,
+    );
     slider(c, t, track.x, track.y, track.w, value);
     let mut below_rect = None;
     if let (Some(r), Some(l)) = (below, below_lay) {
@@ -1953,18 +2644,49 @@ pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Capt
         draw_row(c, t, f, &r, &l, y, &Tone::page(t));
         below_rect = Some(Rect::new(card_x, y, right - card_x, l.h));
     }
-    SliderBlock { bottom: top + h, track, below: below_rect }
+    SliderBlock {
+        bottom: top + h,
+        track,
+        below: below_rect,
+    }
 }
 
 /// Swipe-to-confirm control in the thick-slider style; `progress` (0 to 1)
 /// is how far the knob has been dragged. Returns the track.
-pub fn confirm(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, label: &str, danger: bool, progress: f32) -> Rect {
+pub fn confirm(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    top: f32,
+    label: &str,
+    danger: bool,
+    progress: f32,
+) -> Rect {
     let m = &t.m;
     let accent = if danger { t.pal.danger } else { t.pal.accent };
     let (x, w, h) = (m.margin, m.w as f32 - m.margin * 2.0, m.dp(56.0));
-    c.fill_round_rect(x, top, w, h, h / 2.0, if danger { t.pal.danger_soft } else { t.pal.badge });
+    c.fill_round_rect(
+        x,
+        top,
+        w,
+        h,
+        h / 2.0,
+        if danger {
+            t.pal.danger_soft
+        } else {
+            t.pal.badge
+        },
+    );
     // The label stands between the knob at rest and the track's end.
-    c.text_center_in(&f.heading, label, x + w / 2.0 + h / 4.0, top + h / 2.0, m.row_title_px, accent, w - h * 2.0);
+    c.text_center_in(
+        &f.heading,
+        label,
+        x + w / 2.0 + h / 4.0,
+        top + h / 2.0,
+        m.row_title_px,
+        accent,
+        w - h * 2.0,
+    );
     let k = h - m.dp(8.0);
     let kcx = x + h / 2.0 + (w - h) * progress.clamp(0.0, 1.0);
     let kcy = top + h / 2.0;
@@ -1973,9 +2695,30 @@ pub fn confirm(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, label: &str, dang
     }
     c.fill_circle(kcx, kcy, k / 2.0, accent);
     let s = k * 0.3;
-    c.line(kcx - s * 0.5, kcy, kcx + s * 0.5, kcy, m.stroke, Rgba::rgb(255, 255, 255));
-    c.line(kcx + s * 0.5, kcy, kcx + s * 0.05, kcy - s * 0.45, m.stroke, Rgba::rgb(255, 255, 255));
-    c.line(kcx + s * 0.5, kcy, kcx + s * 0.05, kcy + s * 0.45, m.stroke, Rgba::rgb(255, 255, 255));
+    c.line(
+        kcx - s * 0.5,
+        kcy,
+        kcx + s * 0.5,
+        kcy,
+        m.stroke,
+        Rgba::rgb(255, 255, 255),
+    );
+    c.line(
+        kcx + s * 0.5,
+        kcy,
+        kcx + s * 0.05,
+        kcy - s * 0.45,
+        m.stroke,
+        Rgba::rgb(255, 255, 255),
+    );
+    c.line(
+        kcx + s * 0.5,
+        kcy,
+        kcx + s * 0.05,
+        kcy + s * 0.45,
+        m.stroke,
+        Rgba::rgb(255, 255, 255),
+    );
     Rect::new(x, top, w, h)
 }
 
@@ -1983,12 +2726,27 @@ pub fn progress_bar(c: &mut Canvas, t: &Theme, x: f32, y: f32, w: f32, value: f3
     let m = &t.m;
     let h = m.dp(6.0);
     c.fill_round_rect(x, y, w, h, h / 2.0, t.pal.track);
-    c.fill_round_rect(x, y, (w * value.clamp(0.0, 1.0)).max(h), h, h / 2.0, t.pal.accent);
+    c.fill_round_rect(
+        x,
+        y,
+        (w * value.clamp(0.0, 1.0)).max(h),
+        h,
+        h / 2.0,
+        t.pal.accent,
+    );
 }
 
 /// A card for a long job: what is under way, a line on where it stands,
 /// and a bar when the share done is known. Returns the card's bottom.
-pub fn progress_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, detail: &str, done: Option<f32>) -> f32 {
+pub fn progress_card(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    top: f32,
+    title: &str,
+    detail: &str,
+    done: Option<f32>,
+) -> f32 {
     let m = &t.m;
     let (card_x, right) = (m.margin, m.w as f32 - m.margin);
     let x = card_x + m.inner;
@@ -2001,9 +2759,32 @@ pub fn progress_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str
         Some(_) => bar_top + m.dp(6.0) + m.dp(22.0),
         None => detail_base + m.dp(24.0),
     };
-    c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, t.pal.card);
-    c.text(&f.heading, title, x, title_base, m.row_title_px, t.pal.text, Some(width));
-    c.text(&f.body, detail, x, detail_base, m.sub_px, t.pal.subtitle, Some(width));
+    c.fill_round_rect(
+        card_x,
+        top,
+        right - card_x,
+        bottom - top,
+        m.card_radius,
+        t.pal.card,
+    );
+    c.text(
+        &f.heading,
+        title,
+        x,
+        title_base,
+        m.row_title_px,
+        t.pal.text,
+        Some(width),
+    );
+    c.text(
+        &f.body,
+        detail,
+        x,
+        detail_base,
+        m.sub_px,
+        t.pal.subtitle,
+        Some(width),
+    );
     if let Some(v) = done {
         progress_bar(c, t, x, bar_top, width, v);
     }
@@ -2016,7 +2797,12 @@ pub const PATTERN_REACH_DP: f32 = 32.0;
 /// Centres of the nine pattern dots, row by row.
 pub fn pattern_dots(cx: f32, cy: f32, span: f32) -> [(f32, f32); 9] {
     let step = span / 2.0;
-    std::array::from_fn(|i| (cx - step + (i % 3) as f32 * step, cy - step + (i / 3) as f32 * step))
+    std::array::from_fn(|i| {
+        (
+            cx - step + (i % 3) as f32 * step,
+            cy - step + (i / 3) as f32 * step,
+        )
+    })
 }
 
 pub fn pattern_lock(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, span: f32, path: &[usize]) {
@@ -2073,14 +2859,26 @@ pub fn keypad_height(t: &Theme) -> f32 {
 /// The keypad a screen lock's code is typed on, its top at `top`: four rows
 /// of three round keys, `pressed` drawn held down, and the last row erasing
 /// and confirming, in `l`. Returns where each key answers a touch.
-pub fn keypad(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, pressed: Option<Cap>) -> Vec<(Rect, Cap)> {
+pub fn keypad(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    l: Lang,
+    top: f32,
+    pressed: Option<Cap>,
+) -> Vec<(Rect, Cap)> {
     let m = &t.m;
     let (size, gx, gy) = (m.dp(PAD_KEY_DP), m.dp(PAD_GAP_X_DP), m.dp(PAD_GAP_Y_DP));
     let left = (m.w as f32 - (3.0 * size + 2.0 * gx)) / 2.0;
     let mut keys = Vec::with_capacity(PAD_KEYS.len());
     for (i, &cap) in PAD_KEYS.iter().enumerate() {
         let (row, col) = (i / 3, i % 3);
-        let r = Rect::new(left + col as f32 * (size + gx), top + m.dp(PAD_TOP_DP) + row as f32 * (size + gy), size, size);
+        let r = Rect::new(
+            left + col as f32 * (size + gx),
+            top + m.dp(PAD_TOP_DP) + row as f32 * (size + gy),
+            size,
+            size,
+        );
         keys.push((r, cap));
     }
     for &(r, cap) in &keys {
@@ -2093,16 +2891,38 @@ pub fn keypad(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, pressed: 
             _ if bare => t.pal.bg,
             _ => t.pal.card,
         };
-        let fill = if pressed == Some(cap) { mix(base, t.pal.text, 0.16) } else { base };
+        let fill = if pressed == Some(cap) {
+            mix(base, t.pal.text, 0.16)
+        } else {
+            base
+        };
         if !bare || cap == Cap::Enter {
             c.fill_circle(cx, cy, r.w / 2.0, fill);
         }
         match cap {
-            Cap::Char(ch) => c.text_center(&f.heading, &ch.to_string(), cx, cy, m.dp(34.0), t.pal.text),
-            Cap::Backspace => c.text_center_in(&f.body, l.pick(texts::keyboard::DELETE), cx, cy, m.row_title_px, t.pal.accent, r.w),
+            Cap::Char(ch) => {
+                c.text_center(&f.heading, &ch.to_string(), cx, cy, m.dp(34.0), t.pal.text)
+            }
+            Cap::Backspace => c.text_center_in(
+                &f.body,
+                l.pick(texts::keyboard::DELETE),
+                cx,
+                cy,
+                m.row_title_px,
+                t.pal.accent,
+                r.w,
+            ),
             _ => {
                 let room = r.w - m.dp(PAD_WORD_INSET_DP) * 2.0;
-                c.text_center_in(&f.heading, l.pick(texts::keyboard::CONFIRM), cx, cy, m.row_title_px, Rgba::rgb(255, 255, 255), room);
+                c.text_center_in(
+                    &f.heading,
+                    l.pick(texts::keyboard::CONFIRM),
+                    cx,
+                    cy,
+                    m.row_title_px,
+                    Rgba::rgb(255, 255, 255),
+                    room,
+                );
             }
         }
     }
@@ -2160,9 +2980,19 @@ pub fn outline_in(c: &mut Canvas, t: &Theme, icon: Outline, cx: f32, cy: f32, co
     let sw = d(1.7);
     // Rounded box whose outer edge spans (x, y, w, h) in dp from the centre.
     let boxed = |c: &mut Canvas, x: f32, y: f32, w: f32, h: f32, r: f32| {
-        c.stroke_round_rect(cx + d(x) + sw / 2.0, cy + d(y) + sw / 2.0, d(w) - sw, d(h) - sw, d(r) - sw / 2.0, sw, col);
+        c.stroke_round_rect(
+            cx + d(x) + sw / 2.0,
+            cy + d(y) + sw / 2.0,
+            d(w) - sw,
+            d(h) - sw,
+            d(r) - sw / 2.0,
+            sw,
+            col,
+        );
     };
-    let seg = |c: &mut Canvas, x0: f32, y0: f32, x1: f32, y1: f32| c.line(cx + d(x0), cy + d(y0), cx + d(x1), cy + d(y1), sw, col);
+    let seg = |c: &mut Canvas, x0: f32, y0: f32, x1: f32, y1: f32| {
+        c.line(cx + d(x0), cy + d(y0), cx + d(x1), cy + d(y1), sw, col)
+    };
     let ring = |c: &mut Canvas, pts: &[(f32, f32)]| {
         for (i, &(x0, y0)) in pts.iter().enumerate() {
             let (x1, y1) = pts[(i + 1) % pts.len()];
@@ -2209,13 +3039,31 @@ pub fn outline_in(c: &mut Canvas, t: &Theme, icon: Outline, cx: f32, cy: f32, co
             seg(c, 4.6, 4.6, 1.4, 4.6);
         }
         Outline::Storage => {
-            ring(c, &[(-2.6, -8.65), (5.95, -8.65), (5.95, 8.65), (-5.95, 8.65), (-5.95, -5.3)]);
+            ring(
+                c,
+                &[
+                    (-2.6, -8.65),
+                    (5.95, -8.65),
+                    (5.95, 8.65),
+                    (-5.95, 8.65),
+                    (-5.95, -5.3),
+                ],
+            );
             for x in [-0.6f32, 1.6, 3.8] {
                 seg(c, x, -5.6, x, -3.4);
             }
         }
         Outline::Tag => {
-            ring(c, &[(-8.6, 0.0), (-4.3, -5.95), (8.65, -5.95), (8.65, 5.95), (-4.3, 5.95)]);
+            ring(
+                c,
+                &[
+                    (-8.6, 0.0),
+                    (-4.3, -5.95),
+                    (8.65, -5.95),
+                    (8.65, 5.95),
+                    (-4.3, 5.95),
+                ],
+            );
             c.fill_circle(cx - d(3.3), cy, d(1.6), col);
         }
         Outline::Info => {
@@ -2226,7 +3074,15 @@ pub fn outline_in(c: &mut Canvas, t: &Theme, icon: Outline, cx: f32, cy: f32, co
         Outline::Wifi => {
             let apex = cy + d(5.6);
             for r in [3.6f32, 6.8, 10.0] {
-                c.stroke_arc(cx, apex, d(r), -135f32.to_radians(), 90f32.to_radians(), sw, col);
+                c.stroke_arc(
+                    cx,
+                    apex,
+                    d(r),
+                    -135f32.to_radians(),
+                    90f32.to_radians(),
+                    sw,
+                    col,
+                );
             }
             c.fill_circle(cx, apex, d(1.25), col);
         }
@@ -2242,7 +3098,19 @@ pub fn outline_in(c: &mut Canvas, t: &Theme, icon: Outline, cx: f32, cy: f32, co
             }
         }
         Outline::Shield => {
-            ring(c, &[(0.0, -9.2), (7.6, -6.1), (7.4, 0.6), (5.1, 5.4), (0.0, 9.2), (-5.1, 5.4), (-7.4, 0.6), (-7.6, -6.1)]);
+            ring(
+                c,
+                &[
+                    (0.0, -9.2),
+                    (7.6, -6.1),
+                    (7.4, 0.6),
+                    (5.1, 5.4),
+                    (0.0, 9.2),
+                    (-5.1, 5.4),
+                    (-7.4, 0.6),
+                    (-7.6, -6.1),
+                ],
+            );
             c.fill_circle(cx, cy - d(1.3), d(1.5), col);
             seg(c, 0.0, -1.3, 0.0, 3.0);
         }
@@ -2250,8 +3118,22 @@ pub fn outline_in(c: &mut Canvas, t: &Theme, icon: Outline, cx: f32, cy: f32, co
             let (ccy, r) = (cy - d(2.4), d(7.0));
             let (left, right) = (150f32.to_radians(), 30f32.to_radians());
             c.stroke_arc(cx, ccy, r, left, 240f32.to_radians(), sw, col);
-            c.line(cx + r * left.cos(), ccy + r * left.sin(), cx, cy + d(9.4), sw, col);
-            c.line(cx + r * right.cos(), ccy + r * right.sin(), cx, cy + d(9.4), sw, col);
+            c.line(
+                cx + r * left.cos(),
+                ccy + r * left.sin(),
+                cx,
+                cy + d(9.4),
+                sw,
+                col,
+            );
+            c.line(
+                cx + r * right.cos(),
+                ccy + r * right.sin(),
+                cx,
+                cy + d(9.4),
+                sw,
+                col,
+            );
             c.stroke_circle(cx, ccy, d(2.4), sw, col);
         }
         Outline::Mask => {
@@ -2298,13 +3180,19 @@ pub fn detail_grid(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[Deta
         .enumerate()
         .map(|(i, d)| {
             let width = widths[i % 2];
-            let value = d.value.split('\n').flat_map(|l| wrap(c, &f.body, l, m.sub_px, width)).collect();
+            let value = d
+                .value
+                .split('\n')
+                .flat_map(|l| wrap(c, &f.body, l, m.sub_px, width))
+                .collect();
             (fitted(c, &f.heading, d.title, m.row_title_px, width), value)
         })
         .collect();
     // How far a box's last line is below the first line of its title.
     let depth = |(title, value): &(Vec<String>, Vec<String>)| {
-        title_pitch * (title.len() - 1) as f32 + to_value + pitch * value.len().saturating_sub(1) as f32
+        title_pitch * (title.len() - 1) as f32
+            + to_value
+            + pitch * value.len().saturating_sub(1) as f32
     };
     let mut centres = Vec::new();
     let mut icy = top + m.dp(28.0);
@@ -2315,17 +3203,40 @@ pub fn detail_grid(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[Deta
         icy = last + after;
     }
     let bottom = last + to_value;
-    c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, t.pal.card);
+    c.fill_round_rect(
+        card_x,
+        top,
+        right - card_x,
+        bottom - top,
+        m.card_radius,
+        t.pal.card,
+    );
     for (i, (d, (title, value))) in items.iter().zip(&cells).enumerate() {
         let (x, icy) = (cols[i % 2], centres[i / 2]);
         outline_in(c, t, d.icon, x + m.dp(10.0), icy, t.pal.spec_label);
         let title_cy = icy + to_title;
         for (k, l) in title.iter().enumerate() {
-            c.text_vc(&f.heading, l, x, title_cy + title_pitch * k as f32, m.row_title_px, t.pal.text, Some(widths[i % 2]));
+            c.text_vc(
+                &f.heading,
+                l,
+                x,
+                title_cy + title_pitch * k as f32,
+                m.row_title_px,
+                t.pal.text,
+                Some(widths[i % 2]),
+            );
         }
         let value_cy = title_cy + title_pitch * (title.len() - 1) as f32 + to_value;
         for (k, l) in value.iter().enumerate() {
-            c.text_vc(&f.body, l, x, value_cy + pitch * k as f32, m.sub_px, t.pal.spec_label, None);
+            c.text_vc(
+                &f.body,
+                l,
+                x,
+                value_cy + pitch * k as f32,
+                m.sub_px,
+                t.pal.spec_label,
+                None,
+            );
         }
     }
     bottom
@@ -2333,14 +3244,24 @@ pub fn detail_grid(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[Deta
 
 /// A card of things to know: its heading, then each point after a dot,
 /// its lines kept clear of the dot, as the stock system update page ends.
-pub fn notes(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, heading: &str, points: &[&str]) -> f32 {
+pub fn notes(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    top: f32,
+    heading: &str,
+    points: &[&str],
+) -> f32 {
     let m = &t.m;
     let (card_x, right) = (m.margin, m.w as f32 - m.margin);
     let x = card_x + m.inner;
     let px = m.dp(NOTES_PX);
     let indent = m.dp(NOTES_INDENT);
     let width = right - m.inner - x - indent;
-    let lines: Vec<Vec<String>> = points.iter().map(|p| wrap(c, &f.body, p, px, width)).collect();
+    let lines: Vec<Vec<String>> = points
+        .iter()
+        .map(|p| wrap(c, &f.body, p, px, width))
+        .collect();
     // Centre to centre: the heading to the first point and one point to the
     // next, and a point's lines.
     let (pad, step, pitch) = (m.dp(NOTES_PAD), m.dp(NOTES_STEP), m.dp(NOTES_PITCH));
@@ -2353,12 +3274,27 @@ pub fn notes(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, heading: &str, poin
         centres.push(first);
     }
     let bottom = cy + pad;
-    c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, t.pal.card);
+    c.fill_round_rect(
+        card_x,
+        top,
+        right - card_x,
+        bottom - top,
+        m.card_radius,
+        t.pal.card,
+    );
     c.text_vc(&f.body, heading, x, top + pad, px, t.pal.text, None);
     for (point, first) in lines.iter().zip(centres) {
         c.text_vc(&f.body, "·", x, first, px, t.pal.text, None);
         for (k, l) in point.iter().enumerate() {
-            c.text_vc(&f.body, l, x + indent, first + pitch * k as f32, px, t.pal.text, None);
+            c.text_vc(
+                &f.body,
+                l,
+                x + indent,
+                first + pitch * k as f32,
+                px,
+                t.pal.text,
+                None,
+            );
         }
     }
     bottom
@@ -2374,7 +3310,14 @@ const NOTES_PITCH: f32 = 18.0;
 
 /// [`section`] with a word at its right end that does something, such as
 /// the WLAN page's「刷新」: where the word can be touched.
-pub fn section_action(c: &mut Canvas, t: &Theme, f: &Fonts, prev_bottom: f32, label: &str, action: &str) -> (f32, Rect) {
+pub fn section_action(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    prev_bottom: f32,
+    label: &str,
+    action: &str,
+) -> (f32, Rect) {
     let m = &t.m;
     let y = section(c, t, f, prev_bottom, label);
     let ink_top = prev_bottom + m.section_label_top;
@@ -2382,7 +3325,15 @@ pub fn section_action(c: &mut Canvas, t: &Theme, f: &Fonts, prev_bottom: f32, la
     let x = m.w as f32 - m.margin - m.inner - w;
     c.text_top(&f.label, action, x, ink_top, m.label_px, t.pal.accent, None);
     let reach = m.dp(12.0);
-    (y, Rect::new(x - reach, ink_top - reach, w + reach + m.margin + m.inner, m.label_px + reach * 2.0))
+    (
+        y,
+        Rect::new(
+            x - reach,
+            ink_top - reach,
+            w + reach + m.margin + m.inner,
+            m.label_px + reach * 2.0,
+        ),
+    )
 }
 
 /// Centred lettering with its cap line at `cap_top`, as ink whose colour
@@ -2393,9 +3344,23 @@ pub fn wordmark(t: &Theme, f: &Fonts, text: &str, cap_top: f32, px: f32) -> Spri
     let x = (t.m.w as f32 - w) / 2.0;
     let pad = t.m.dp(4.0);
     let (left, top) = (x - pad, cap_top - px * 0.4);
-    Sprite::capture(left, top, (w + pad * 2.0).ceil() as u32, (px * 1.6).ceil() as u32, |c, dx, dy| {
-        c.text(face, text, x + dx, cap_top + face.cap(px) + dy, px, Rgba::rgb(0, 0, 0), None);
-    })
+    Sprite::capture(
+        left,
+        top,
+        (w + pad * 2.0).ceil() as u32,
+        (px * 1.6).ceil() as u32,
+        |c, dx, dy| {
+            c.text(
+                face,
+                text,
+                x + dx,
+                cap_top + face.cap(px) + dy,
+                px,
+                Rgba::rgb(0, 0, 0),
+                None,
+            );
+        },
+    )
 }
 
 /// The version line centred under the About wordmark.
@@ -2412,16 +3377,32 @@ pub fn author_line(t: &Theme, f: &Fonts, text: &str) -> Sprite {
 }
 
 /// A line centred under the About wordmark in the version's type, `below`
-/// the version's place.
+/// the version's place. The version starts lower than it did behind lettering:
+/// the wordmark picture's descender needs the room, where the old font's y
+/// almost touched the version line.
 fn hero_line(t: &Theme, f: &Fonts, text: &str, below: f32) -> Sprite {
     let m = &t.m;
     let px = m.dp(13.3);
     let w = Canvas::new(0, 0).text_width(&f.body, text, px);
-    let base = m.dp(296.3) + f.body.cap(px) + below;
+    let base = m.dp(322.0) + f.body.cap(px) + below;
     let (left, top) = ((m.w as f32 - w) / 2.0 - m.dp(2.0), base - px * 1.2);
-    Sprite::capture(left, top, (w + m.dp(4.0)).ceil() as u32, (px * 1.6).ceil() as u32, |c, dx, dy| {
-        c.text(&f.body, text, (m.w as f32 - w) / 2.0 + dx, base + dy, px, Rgba::rgb(0, 0, 0), None);
-    })
+    Sprite::capture(
+        left,
+        top,
+        (w + m.dp(4.0)).ceil() as u32,
+        (px * 1.6).ceil() as u32,
+        |c, dx, dy| {
+            c.text(
+                &f.body,
+                text,
+                (m.w as f32 - w) / 2.0 + dx,
+                base + dy,
+                px,
+                Rgba::rgb(0, 0, 0),
+                None,
+            );
+        },
+    )
 }
 
 /// A row of the About summary card: title on the left, value on the right,
@@ -2441,7 +3422,12 @@ pub fn facts(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Fact], tone
     c.fill_round_rect(card_x, top, right - card_x, h, m.card_radius, tone.card);
     let mut rects = Vec::new();
     for (i, r) in rows.iter().enumerate() {
-        rects.push(Rect::new(card_x, top + row_h * i as f32, right - card_x, row_h));
+        rects.push(Rect::new(
+            card_x,
+            top + row_h * i as f32,
+            right - card_x,
+            row_h,
+        ));
         let cy = top + row_h * (i as f32 + 0.5);
         let tx = card_x + m.inner;
         let tw = c.text_vc(&f.heading, r.title, tx, cy, m.row_title_px, tone.text, None);
@@ -2453,34 +3439,87 @@ pub fn facts(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Fact], tone
         };
         let room = value_right - (tx + tw + m.dp(16.0));
         let w = c.text_width(&f.value, &r.value, m.sub_px).min(room);
-        c.text_vc(&f.value, &r.value, value_right - w, cy, m.sub_px, tone.value, Some(room));
+        c.text_vc(
+            &f.value,
+            &r.value,
+            value_right - w,
+            cy,
+            m.sub_px,
+            tone.value,
+            Some(room),
+        );
     }
-    Block { bottom: top + h, rows: rects }
+    Block {
+        bottom: top + h,
+        rows: rects,
+    }
 }
 
 /// The About page hardware card: the model in large type (`title` may hold
 /// several lines separated by `\n`), then values with small captions.
-pub fn spec_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, items: &[(&str, String)], tone: &Tone) -> f32 {
+pub fn spec_card(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    top: f32,
+    title: &str,
+    items: &[(&str, String)],
+    tone: &Tone,
+) -> f32 {
     let m = &t.m;
     let (card_x, right) = (m.margin, m.w as f32 - m.margin);
     let x = card_x + m.inner;
     let room = right - m.inner - x;
     let title_px = m.dp(24.0);
-    let lines: Vec<String> = title.split('\n').flat_map(|l| wrap(c, &f.heading, l, title_px, room)).collect();
+    let lines: Vec<String> = title
+        .split('\n')
+        .flat_map(|l| wrap(c, &f.heading, l, title_px, room))
+        .collect();
     let first_title = top + m.dp(23.0) + f.heading.cap(title_px);
     let title_pitch = m.dp(33.0);
     let first = first_title + title_pitch * lines.len().saturating_sub(1) as f32 + m.dp(39.4);
     let (pitch, drop) = (m.dp(45.7), m.dp(15.5));
     let last_caption = first + pitch * items.len().saturating_sub(1) as f32 + drop;
     let bottom = last_caption + m.dp(19.7);
-    c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, tone.card);
+    c.fill_round_rect(
+        card_x,
+        top,
+        right - card_x,
+        bottom - top,
+        m.card_radius,
+        tone.card,
+    );
     for (k, line) in lines.iter().enumerate() {
-        c.text(&f.heading, line, x, first_title + title_pitch * k as f32, title_px, tone.text, Some(room));
+        c.text(
+            &f.heading,
+            line,
+            x,
+            first_title + title_pitch * k as f32,
+            title_px,
+            tone.text,
+            Some(room),
+        );
     }
     for (i, (caption, value)) in items.iter().enumerate() {
         let base = first + pitch * i as f32;
-        c.text(&f.heading, value, x, base, m.dp(14.1), tone.text, Some(room));
-        c.text(&f.body, caption, x, base + drop, m.dp(11.0), tone.caption, None);
+        c.text(
+            &f.heading,
+            value,
+            x,
+            base,
+            m.dp(14.1),
+            tone.text,
+            Some(room),
+        );
+        c.text(
+            &f.body,
+            caption,
+            x,
+            base + drop,
+            m.dp(11.0),
+            tone.caption,
+            None,
+        );
     }
     bottom
 }
@@ -2507,13 +3546,19 @@ pub fn spec_grid(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[Spec])
         .enumerate()
         .map(|(i, s)| {
             let width = widths[i % 2];
-            let value = s.value.split('\n').flat_map(|l| wrap(c, &f.heading, l, value_px, width)).collect();
+            let value = s
+                .value
+                .split('\n')
+                .flat_map(|l| wrap(c, &f.heading, l, value_px, width))
+                .collect();
             (fitted(c, &f.body, s.label, m.sub_px, width), value)
         })
         .collect();
     // How far a cell's last line is below the first line of its caption.
     let depth = |(label, value): &(Vec<String>, Vec<String>)| {
-        m.sub_pitch * (label.len() - 1) as f32 + to_value + pitch * value.len().saturating_sub(1) as f32
+        m.sub_pitch * (label.len() - 1) as f32
+            + to_value
+            + pitch * value.len().saturating_sub(1) as f32
     };
     let mut centres = Vec::new();
     let mut cy = top + m.dp(38.2);
@@ -2524,17 +3569,40 @@ pub fn spec_grid(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[Spec])
         cy = last + m.dp(28.3);
     }
     let bottom = last + m.dp(19.7);
-    c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, t.pal.card);
+    c.fill_round_rect(
+        card_x,
+        top,
+        right - card_x,
+        bottom - top,
+        m.card_radius,
+        t.pal.card,
+    );
     for (i, (s, (label, value))) in items.iter().zip(&cells).enumerate() {
         let (x, icy) = (cols[i % 2], centres[i / 2]);
         outline(c, t, s.icon, x + m.dp(11.5), icy);
         let label_base = icy + to_label;
         for (k, l) in label.iter().enumerate() {
-            c.text(&f.body, l, x, label_base + m.sub_pitch * k as f32, m.sub_px, t.pal.subtitle, Some(widths[i % 2]));
+            c.text(
+                &f.body,
+                l,
+                x,
+                label_base + m.sub_pitch * k as f32,
+                m.sub_px,
+                t.pal.subtitle,
+                Some(widths[i % 2]),
+            );
         }
         let value_base = label_base + m.sub_pitch * (label.len() - 1) as f32 + to_value;
         for (k, l) in value.iter().enumerate() {
-            c.text(&f.heading, l, x, value_base + pitch * k as f32, value_px, t.pal.info, None);
+            c.text(
+                &f.heading,
+                l,
+                x,
+                value_base + pitch * k as f32,
+                value_px,
+                t.pal.info,
+                None,
+            );
         }
     }
     bottom
@@ -2549,8 +3617,14 @@ pub fn info_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[(&str,
     let width = right - m.inner - x;
     let (ink_top, _) = f.heading.ink(m.row_title_px);
     let (to_value, pitch) = (m.dp(20.2), m.dp(19.0));
-    let blocks: Vec<Vec<String>> =
-        items.iter().map(|(_, v)| v.lines().flat_map(|l| wrap(c, &f.body, l, m.sub_px, width)).collect()).collect();
+    let blocks: Vec<Vec<String>> = items
+        .iter()
+        .map(|(_, v)| {
+            v.lines()
+                .flat_map(|l| wrap(c, &f.body, l, m.sub_px, width))
+                .collect()
+        })
+        .collect();
     let mut bases = Vec::new();
     let mut title_top = top + m.dp(23.5);
     let mut last = title_top;
@@ -2561,11 +3635,34 @@ pub fn info_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[(&str,
         title_top = last + m.dp(33.0);
     }
     let bottom = last + m.dp(24.0);
-    c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, t.pal.card);
+    c.fill_round_rect(
+        card_x,
+        top,
+        right - card_x,
+        bottom - top,
+        m.card_radius,
+        t.pal.card,
+    );
     for ((title, _), (lines, base)) in items.iter().zip(blocks.iter().zip(&bases)) {
-        c.text(&f.heading, title, x, *base, m.row_title_px, t.pal.info, Some(width));
+        c.text(
+            &f.heading,
+            title,
+            x,
+            *base,
+            m.row_title_px,
+            t.pal.info,
+            Some(width),
+        );
         for (k, l) in lines.iter().enumerate() {
-            c.text(&f.body, l, x, base + to_value + pitch * k as f32, m.sub_px, t.pal.subtitle, None);
+            c.text(
+                &f.body,
+                l,
+                x,
+                base + to_value + pitch * k as f32,
+                m.sub_px,
+                t.pal.subtitle,
+                None,
+            );
         }
     }
     bottom
@@ -2584,9 +3681,26 @@ const OUTPUT_FOOT_DP: f32 = 20.0;
 /// card, on one line at least.
 fn output_line<'f>(c: &Canvas, t: &Theme, f: &'f Fonts, line: &str) -> (&'f Face, Vec<String>) {
     let m = &t.m;
-    let face = if line.chars().all(|ch| f.mono.has(ch)) { &f.mono } else { &f.body };
-    let parts = wrap(c, face, line, m.sub_px, m.w as f32 - 2.0 * (m.margin + m.inner));
-    (face, if parts.is_empty() { vec![String::new()] } else { parts })
+    let face = if line.chars().all(|ch| f.mono.has(ch)) {
+        &f.mono
+    } else {
+        &f.body
+    };
+    let parts = wrap(
+        c,
+        face,
+        line,
+        m.sub_px,
+        m.w as f32 - 2.0 * (m.margin + m.inner),
+    );
+    (
+        face,
+        if parts.is_empty() {
+            vec![String::new()]
+        } else {
+            parts
+        },
+    )
 }
 
 /// Where a line's baseline sits in a band as tall as the line, the ink of
@@ -2597,7 +3711,11 @@ fn output_layout(t: &Theme, f: &Fonts) -> (f32, f32, f32) {
     let pitch = m.dp(OUTPUT_PITCH_DP);
     let (ink_top, ink_bottom) = f.body.ink(m.sub_px);
     let base = (pitch - ink_top - ink_bottom) / 2.0;
-    (base, m.dp(OUTPUT_TOP_DP) - (base + ink_top), m.dp(OUTPUT_FOOT_DP) - (pitch - base))
+    (
+        base,
+        m.dp(OUTPUT_TOP_DP) - (base + ink_top),
+        m.dp(OUTPUT_FOOT_DP) - (pitch - base),
+    )
 }
 
 /// The rows of a card of the lines a program showed, one to each line and
@@ -2627,13 +3745,33 @@ pub fn output_row(c: &mut Canvas, t: &Theme, f: &Fonts, lines: &[String], i: usi
     let pitch = m.dp(OUTPUT_PITCH_DP);
     let (base, above, _) = output_layout(t, f);
     let y0 = if i == 0 { 0.0 } else { -m.card_radius };
-    let y1 = c.h as f32 + if i + 1 == lines.len() { 0.0 } else { m.card_radius };
+    let y1 = c.h as f32
+        + if i + 1 == lines.len() {
+            0.0
+        } else {
+            m.card_radius
+        };
     c.clear(t.pal.bg);
-    c.fill_round_rect(m.margin, y0, m.w as f32 - 2.0 * m.margin, y1 - y0, m.card_radius, t.pal.card);
+    c.fill_round_rect(
+        m.margin,
+        y0,
+        m.w as f32 - 2.0 * m.margin,
+        y1 - y0,
+        m.card_radius,
+        t.pal.card,
+    );
     let (face, parts) = output_line(c, t, f, &lines[i]);
     let first = base + if i == 0 { above } else { 0.0 };
     for (k, part) in parts.iter().enumerate() {
-        c.text(face, part, m.margin + m.inner, first + pitch * k as f32, m.sub_px, t.pal.info, None);
+        c.text(
+            face,
+            part,
+            m.margin + m.inner,
+            first + pitch * k as f32,
+            m.sub_px,
+            t.pal.info,
+            None,
+        );
     }
 }
 
@@ -2650,21 +3788,47 @@ pub fn theme_picker(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32) -> 
     let caption_base = top + slot_w + m.dp(11.0) - ink_top;
     let bottom = caption_base + ink_bottom;
     let mut rects = Vec::new();
-    let modes = [(texts::settings::LIGHT_MODE, false), (texts::settings::DARK_MODE, true)];
-    for (i, (label, dark)) in modes.map(|(label, dark)| (l.pick(label), dark)).into_iter().enumerate() {
+    let modes = [
+        (texts::settings::LIGHT_MODE, false),
+        (texts::settings::DARK_MODE, true),
+    ];
+    for (i, (label, dark)) in modes
+        .map(|(label, dark)| (l.pick(label), dark))
+        .into_iter()
+        .enumerate()
+    {
         let sx = m.margin + (slot_w + gap) * i as f32;
         let on = t.dark == dark;
         if on {
             let r = m.dp(26.0) - ring / 2.0;
-            c.stroke_round_rect(sx + ring / 2.0, top + ring / 2.0, slot_w - ring, slot_w - ring, r, ring, t.pal.accent);
+            c.stroke_round_rect(
+                sx + ring / 2.0,
+                top + ring / 2.0,
+                slot_w - ring,
+                slot_w - ring,
+                r,
+                ring,
+                t.pal.accent,
+            );
         }
         theme_tile(c, t, sx + inset, top + inset, tile, tile, dark);
         let w = c.text_width(&f.heading, label, label_px);
         let color = if on { t.pal.accent } else { t.pal.info };
-        c.text(&f.heading, label, sx + (slot_w - w) / 2.0, caption_base, label_px, color, None);
+        c.text(
+            &f.heading,
+            label,
+            sx + (slot_w - w) / 2.0,
+            caption_base,
+            label_px,
+            color,
+            None,
+        );
         rects.push(Rect::new(sx, top, slot_w, bottom - top));
     }
-    Block { bottom, rows: rects }
+    Block {
+        bottom,
+        rows: rects,
+    }
 }
 
 /// What a card on the systems page shows: what the system is to the phone,
@@ -2705,7 +3869,10 @@ pub fn system_cards(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, cards: &[Sys
         rows.push(r);
         y += h + m.card_gap;
     }
-    Block { bottom: y - m.card_gap, rows }
+    Block {
+        bottom: y - m.card_gap,
+        rows,
+    }
 }
 
 /// One system's card at `r`: the role, the name and the line under it as
@@ -2715,23 +3882,54 @@ fn system_card(c: &mut Canvas, t: &Theme, f: &Fonts, r: Rect, card: &SystemCard)
     c.fill_round_rect(r.x, r.y, r.w, r.h, m.card_radius, t.pal.card);
     let (x, cy) = (r.x + m.inner, r.y + r.h / 2.0);
     let room = r.w - m.inner * 2.0 - m.dp(36.0);
-    let px = fitted_px(c, &f.title, card.name, m.dp(SYSTEM_NAME_DP), m.dp(20.0), room);
+    let px = fitted_px(
+        c,
+        &f.title,
+        card.name,
+        m.dp(SYSTEM_NAME_DP),
+        m.dp(20.0),
+        room,
+    );
     let ink = |face: &Face, px: f32| {
         let (top, bottom) = face.ink(px);
         bottom - top
     };
-    let (role_h, name_h, detail_h) = (ink(&f.label, m.label_px), ink(&f.title, px), ink(&f.body, m.sub_px));
+    let (role_h, name_h, detail_h) = (
+        ink(&f.label, m.label_px),
+        ink(&f.title, px),
+        ink(&f.body, m.sub_px),
+    );
     let (above, below) = (m.dp(12.0), m.dp(12.0));
     let mut y = cy - (role_h + above + name_h + below + detail_h) / 2.0;
-    c.text_top(&f.label, card.role, x, y, m.label_px, t.pal.section, Some(room));
+    c.text_top(
+        &f.label,
+        card.role,
+        x,
+        y,
+        m.label_px,
+        t.pal.section,
+        Some(room),
+    );
     y += role_h + above;
-    let name_ink = if card.mark == SystemMark::Opens { t.pal.accent } else { t.pal.text };
+    let name_ink = if card.mark == SystemMark::Opens {
+        t.pal.accent
+    } else {
+        t.pal.text
+    };
     // Only a name too long even at the least size is cut short; one sized
     // to fit is drawn whole, its last pixel's rounding aside.
     let cut = (c.text_width(&f.title, card.name, px) > room + 1.0).then_some(room);
     c.text_top(&f.title, card.name, x, y, px, name_ink, cut);
     y += name_h + below;
-    c.text_top(&f.body, card.detail, x, y, m.sub_px, t.pal.subtitle, Some(room));
+    c.text_top(
+        &f.body,
+        card.detail,
+        x,
+        y,
+        m.sub_px,
+        t.pal.subtitle,
+        Some(room),
+    );
     let right = r.x + r.w;
     match card.mark {
         SystemMark::Check(on) => check_circle(c, t, right - m.inner - m.dp(12.0), cy, on),
@@ -2747,8 +3945,22 @@ pub fn check_circle(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, on: bool) {
     if on {
         c.fill_circle(cx, cy, d / 2.0, t.pal.accent);
         let s = d * 0.5;
-        c.line(cx - s * 0.42, cy + s * 0.02, cx - s * 0.1, cy + s * 0.32, m.stroke, Rgba::rgb(255, 255, 255));
-        c.line(cx - s * 0.1, cy + s * 0.32, cx + s * 0.44, cy - s * 0.3, m.stroke, Rgba::rgb(255, 255, 255));
+        c.line(
+            cx - s * 0.42,
+            cy + s * 0.02,
+            cx - s * 0.1,
+            cy + s * 0.32,
+            m.stroke,
+            Rgba::rgb(255, 255, 255),
+        );
+        c.line(
+            cx - s * 0.1,
+            cy + s * 0.32,
+            cx + s * 0.44,
+            cy - s * 0.3,
+            m.stroke,
+            Rgba::rgb(255, 255, 255),
+        );
     } else {
         c.stroke_circle(cx, cy, d / 2.0 - m.dp(1.0), m.dp(2.0), t.pal.switch_off);
     }
@@ -2799,7 +4011,7 @@ fn rows(layer: Layer) -> [&'static str; 3] {
     }
 }
 
-const KEY_H_DP: f32 = 44.0;
+const KEY_H_DP: f32 = 58.0;
 /// How round a key's corners are.
 pub const KEY_RADIUS_DP: f32 = 6.0;
 const KEY_GAP_X_DP: f32 = 5.5;
@@ -2823,16 +4035,42 @@ pub fn keyboard_height(t: &Theme) -> f32 {
 /// key answers a touch, the gaps between keys shared out among their
 /// neighbours.
 #[allow(clippy::too_many_arguments)]
-pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: Layer, pressed: Option<Cap>, enter: &str) -> Vec<(Rect, Cap)> {
+pub fn keyboard(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    l: Lang,
+    top: f32,
+    layer: Layer,
+    pressed: Option<Cap>,
+    enter: &str,
+) -> Vec<(Rect, Cap)> {
     let m = &t.m;
     let w = m.w as f32;
     let (panel, key, side, ink, shadow) = if t.dark {
-        (Rgba::rgb(18, 18, 18), Rgba::rgb(58, 58, 58), Rgba::rgb(38, 38, 38), Rgba::rgb(237, 237, 237), Rgba::rgb(0, 0, 0))
+        (
+            Rgba::rgb(18, 18, 18),
+            Rgba::rgb(58, 58, 58),
+            Rgba::rgb(38, 38, 38),
+            Rgba::rgb(237, 237, 237),
+            Rgba::rgb(0, 0, 0),
+        )
     } else {
-        (Rgba::rgb(224, 226, 231), Rgba::rgb(255, 255, 255), Rgba::rgb(193, 198, 207), Rgba::rgb(0, 0, 0), Rgba::rgb(138, 141, 147))
+        (
+            Rgba::rgb(224, 226, 231),
+            Rgba::rgb(255, 255, 255),
+            Rgba::rgb(193, 198, 207),
+            Rgba::rgb(0, 0, 0),
+            Rgba::rgb(138, 141, 147),
+        )
     };
     c.fill_rect(0.0, top, w, keyboard_height(t), panel);
-    let (pad, gx, gy, kh) = (m.dp(KEYBOARD_PAD_X_DP), m.dp(KEY_GAP_X_DP), m.dp(KEY_GAP_Y_DP), m.dp(KEY_H_DP));
+    let (pad, gx, gy, kh) = (
+        m.dp(KEYBOARD_PAD_X_DP),
+        m.dp(KEY_GAP_X_DP),
+        m.dp(KEY_GAP_Y_DP),
+        m.dp(KEY_H_DP),
+    );
     let kw = (w - pad * 2.0 - gx * 9.0) / 10.0;
     let side_w = kw * 1.35;
     let row_top = |r: usize| top + m.dp(KEYBOARD_TOP_DP) + r as f32 * (kh + gy);
@@ -2845,7 +4083,10 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
         let n = row.chars().count();
         let x0 = centred(n, kw);
         for (k, ch) in row.chars().enumerate() {
-            keys.push((Rect::new(x0 + k as f32 * (kw + gx), row_top(r), kw, kh), Cap::Char(ch)));
+            keys.push((
+                Rect::new(x0 + k as f32 * (kw + gx), row_top(r), kw, kh),
+                Cap::Char(ch),
+            ));
         }
     }
     let (left, right) = (pad, w - pad - side_w);
@@ -2860,7 +4101,10 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
     let mid_w = ((room - (n as f32 - 1.0) * gx) / n as f32).min(kw * 1.4);
     let x0 = centred(n, mid_w);
     for (k, ch) in third.chars().enumerate() {
-        keys.push((Rect::new(x0 + k as f32 * (mid_w + gx), row_top(2), mid_w, kh), Cap::Char(ch)));
+        keys.push((
+            Rect::new(x0 + k as f32 * (mid_w + gx), row_top(2), mid_w, kh),
+            Cap::Char(ch),
+        ));
     }
     keys.push((Rect::new(right, row_top(2), side_w, kh), Cap::Backspace));
     let switch = match layer {
@@ -2870,17 +4114,27 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
     // The return key is as wide as its word takes, of the room the space
     // bar can spare it.
     let inset = m.dp(KEY_WORD_INSET_DP);
-    let enter_w = (c.text_width(&f.heading, enter, m.sub_px) + inset * 2.0).clamp(kw * 2.2, kw * 3.6);
+    let enter_w =
+        (c.text_width(&f.heading, enter, m.sub_px) + inset * 2.0).clamp(kw * 2.2, kw * 3.6);
     let space_x = left + side_w + gx + kw + gx;
     let space_w = w - pad - enter_w - gx - kw - gx - space_x;
     keys.push((Rect::new(left, row_top(3), side_w, kh), switch));
-    keys.push((Rect::new(left + side_w + gx, row_top(3), kw, kh), Cap::Char(',')));
+    keys.push((
+        Rect::new(left + side_w + gx, row_top(3), kw, kh),
+        Cap::Char(','),
+    ));
     keys.push((Rect::new(space_x, row_top(3), space_w, kh), Cap::Space));
-    keys.push((Rect::new(space_x + space_w + gx, row_top(3), kw, kh), Cap::Char('.')));
-    keys.push((Rect::new(w - pad - enter_w, row_top(3), enter_w, kh), Cap::Enter));
+    keys.push((
+        Rect::new(space_x + space_w + gx, row_top(3), kw, kh),
+        Cap::Char('.'),
+    ));
+    keys.push((
+        Rect::new(w - pad - enter_w, row_top(3), enter_w, kh),
+        Cap::Enter,
+    ));
 
     let radius = m.dp(KEY_RADIUS_DP);
-    let glyph_px = m.dp(21.0);
+    let glyph_px = m.dp(30.0);
     for &(r, cap) in &keys {
         let plain = matches!(cap, Cap::Char(_) | Cap::Space);
         let base = match cap {
@@ -2889,19 +4143,50 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
             _ if plain => key,
             _ => side,
         };
-        let fill = if pressed == Some(cap) { mix(base, ink, 0.16) } else { base };
+        let fill = if pressed == Some(cap) {
+            mix(base, ink, 0.16)
+        } else {
+            base
+        };
         if !t.dark {
-            c.fill_round_rect(r.x, r.y + m.dp(1.0), r.w, r.h, radius, shadow.with_alpha(110));
+            c.fill_round_rect(
+                r.x,
+                r.y + m.dp(1.0),
+                r.w,
+                r.h,
+                radius,
+                shadow.with_alpha(110),
+            );
         }
         c.fill_round_rect(r.x, r.y, r.w, r.h, radius, fill);
         let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         match cap {
             Cap::Char(ch) => {
-                let label = if layer == Layer::Shifted { ch.to_ascii_uppercase() } else { ch };
+                let label = if layer == Layer::Shifted {
+                    ch.to_ascii_uppercase()
+                } else {
+                    ch
+                };
                 c.text_center(&f.heading, &label.to_string(), cx, cy, glyph_px, ink);
             }
-            Cap::Space => c.text_center_in(&f.body, l.pick(texts::keyboard::SPACE), cx, cy, m.sub_px, ink, r.w - inset * 2.0),
-            Cap::Enter => c.text_center_in(&f.heading, enter, cx, cy, m.sub_px, Rgba::rgb(255, 255, 255), r.w - inset * 2.0),
+            Cap::Space => c.text_center_in(
+                &f.body,
+                l.pick(texts::keyboard::SPACE),
+                cx,
+                cy,
+                m.sub_px,
+                ink,
+                r.w - inset * 2.0,
+            ),
+            Cap::Enter => c.text_center_in(
+                &f.heading,
+                enter,
+                cx,
+                cy,
+                m.sub_px,
+                Rgba::rgb(255, 255, 255),
+                r.w - inset * 2.0,
+            ),
             Cap::Show(Layer::Digits) => c.text_center(&f.heading, "123", cx, cy, m.sub_px, ink),
             Cap::Show(Layer::Symbols) => c.text_center(&f.heading, "#+=", cx, cy, m.sub_px, ink),
             Cap::Show(_) => c.text_center(&f.heading, "abc", cx, cy, m.sub_px, ink),
@@ -2920,7 +4205,13 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
                 if layer == Layer::Shifted {
                     c.fill_convex(&pts[..3], ink);
                     c.fill_convex(&[pts[0], pts[6], pts[5]], ink);
-                    c.fill_rect(cx - s * 0.45, cy - m.dp(0.5), s * 0.9, s * 0.9 + m.dp(0.5), ink);
+                    c.fill_rect(
+                        cx - s * 0.45,
+                        cy - m.dp(0.5),
+                        s * 0.9,
+                        s * 0.9 + m.dp(0.5),
+                        ink,
+                    );
                 } else {
                     for k in 0..pts.len() {
                         let (a, b) = (pts[k], pts[(k + 1) % pts.len()]);
@@ -2931,7 +4222,13 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
             Cap::Backspace => {
                 // A key cap pointing left, with a cross in it.
                 let (hw, hh) = (m.dp(11.0), m.dp(8.0));
-                let pts = [(cx - hw, cy), (cx - hw * 0.45, cy - hh), (cx + hw, cy - hh), (cx + hw, cy + hh), (cx - hw * 0.45, cy + hh)];
+                let pts = [
+                    (cx - hw, cy),
+                    (cx - hw * 0.45, cy - hh),
+                    (cx + hw, cy - hh),
+                    (cx + hw, cy + hh),
+                    (cx - hw * 0.45, cy + hh),
+                ];
                 for k in 0..pts.len() {
                     let (a, b) = (pts[k], pts[(k + 1) % pts.len()]);
                     c.line(a.0, a.1, b.0, b.1, m.dp(1.6), ink);
@@ -2943,7 +4240,14 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
         }
     }
     // A touch between keys belongs to the nearest one.
-    keys.into_iter().map(|(r, cap)| (Rect::new(r.x - gx / 2.0, r.y - gy / 2.0, r.w + gx, r.h + gy), cap)).collect()
+    keys.into_iter()
+        .map(|(r, cap)| {
+            (
+                Rect::new(r.x - gx / 2.0, r.y - gy / 2.0, r.w + gx, r.h + gy),
+                cap,
+            )
+        })
+        .collect()
 }
 
 /// Miniature settings page: a blue backdrop with two cards of placeholder
@@ -2952,15 +4256,37 @@ fn theme_tile(c: &mut Canvas, t: &Theme, x: f32, y: f32, w: f32, h: f32, dark: b
     let (top, bottom) = (Rgba::rgb(77, 113, 246), Rgba::rgb(115, 184, 249));
     let grad = |py: f32| mix(top, bottom, (py - y) / h);
     c.fill_round_rect_graded(x, y, w, h, t.m.dp(20.0), &grad);
-    let card = if dark { Rgba::rgb(0, 0, 0).with_alpha(51) } else { Rgba::rgb(255, 255, 255).with_alpha(51) };
+    let card = if dark {
+        Rgba::rgb(0, 0, 0).with_alpha(51)
+    } else {
+        Rgba::rgb(255, 255, 255).with_alpha(51)
+    };
     let lw = h * 0.027;
     for (c0, c1) in [(0.218f32, 0.472f32), (0.523, 0.779)] {
-        c.fill_round_rect(x + w * 0.069, y + h * c0, w * 0.86, h * (c1 - c0), w * 0.045, card);
+        c.fill_round_rect(
+            x + w * 0.069,
+            y + h * c0,
+            w * 0.86,
+            h * (c1 - c0),
+            w * 0.045,
+            card,
+        );
         for (at, end) in [(0.37f32, 0.841f32), (0.64, 0.622)] {
             let ly = y + h * (c0 + (c1 - c0) * at);
             let base = grad(ly);
-            let ink = if dark { mix(base, Rgba::rgb(180, 190, 190), 0.45) } else { mix(base, Rgba::rgb(0, 0, 0), 0.14) };
-            c.line(x + w * 0.162 + lw / 2.0, ly, x + w * end - lw / 2.0, ly, lw, ink);
+            let ink = if dark {
+                mix(base, Rgba::rgb(180, 190, 190), 0.45)
+            } else {
+                mix(base, Rgba::rgb(0, 0, 0), 0.14)
+            };
+            c.line(
+                x + w * 0.162 + lw / 2.0,
+                ly,
+                x + w * end - lw / 2.0,
+                ly,
+                lw,
+                ink,
+            );
         }
     }
 }
@@ -2984,7 +4310,12 @@ mod tests {
             for x in area.x as u32..(area.x + area.w) as u32 {
                 let i = ((y * c.w + x) * 4) as usize;
                 if keep(&c.data[i..i + 4]) {
-                    b = (b.0.min(x as f32), b.1.min(y as f32), b.2.max(x as f32 + 1.0), b.3.max(y as f32 + 1.0));
+                    b = (
+                        b.0.min(x as f32),
+                        b.1.min(y as f32),
+                        b.2.max(x as f32 + 1.0),
+                        b.3.max(y as f32 + 1.0),
+                    );
                 }
             }
         }
@@ -2993,33 +4324,69 @@ mod tests {
 
     #[test]
     fn the_wlan_fan_lights_as_many_arcs_as_the_signal_and_the_padlock_stands_as_asked() {
-        let (black, white, grey) = (Rgba::rgb(0, 0, 0), Rgba::rgb(255, 255, 255), Rgba::rgb(0, 0, 255));
+        let (black, white, grey) = (
+            Rgba::rgb(0, 0, 0),
+            Rgba::rgb(255, 255, 255),
+            Rgba::rgb(0, 0, 255),
+        );
         let mut c = Canvas::new(400, 400);
         c.clear(black);
         wlan_fan(&mut c, 200.0, 200.0, 150.0, 1, white, grey);
         let lit = ink_box(&c, Rect::new(0.0, 0.0, 400.0, 400.0), |p| p[0] > 0);
-        let unlit = ink_box(&c, Rect::new(0.0, 0.0, 400.0, 400.0), |p| p[2] > 0 && p[0] == 0);
-        assert!(lit.1 > unlit.1 + 60.0, "only the inner arc is lit: lit from {}, unlit from {}", lit.1, unlit.1);
+        let unlit = ink_box(&c, Rect::new(0.0, 0.0, 400.0, 400.0), |p| {
+            p[2] > 0 && p[0] == 0
+        });
+        assert!(
+            lit.1 > unlit.1 + 60.0,
+            "only the inner arc is lit: lit from {}, unlit from {}",
+            lit.1,
+            unlit.1
+        );
         let mut c = Canvas::new(400, 400);
         c.clear(black);
         padlock(&mut c, 200.0, 200.0, 300.0, white);
         let (l, top, right, bottom) = ink_box(&c, Rect::new(0.0, 0.0, 400.0, 400.0), |p| p[0] > 0);
-        assert!(((l + right) / 2.0 - 200.0).abs() <= 2.0 && ((top + bottom) / 2.0 - 200.0).abs() <= 2.0, "the padlock is centred");
-        assert!((bottom - top - 300.0).abs() <= 3.0, "and as tall as asked: {}", bottom - top);
+        assert!(
+            ((l + right) / 2.0 - 200.0).abs() <= 2.0 && ((top + bottom) / 2.0 - 200.0).abs() <= 2.0,
+            "the padlock is centred"
+        );
+        assert!(
+            (bottom - top - 300.0).abs() <= 3.0,
+            "and as tall as asked: {}",
+            bottom - top
+        );
     }
 
     #[test]
     fn the_network_details_icons_stand_in_the_middle_of_their_place() {
         let t = Theme::light(1200, 2608, 3.0);
-        for icon in [Outline::Info, Outline::Wifi, Outline::Speed, Outline::Signal, Outline::Shield, Outline::Address, Outline::Mask, Outline::Router] {
+        for icon in [
+            Outline::Info,
+            Outline::Wifi,
+            Outline::Speed,
+            Outline::Signal,
+            Outline::Shield,
+            Outline::Address,
+            Outline::Mask,
+            Outline::Router,
+        ] {
             let mut c = Canvas::new(200, 200);
             c.clear(Rgba::rgb(255, 255, 255));
             outline_in(&mut c, &t, icon, 100.0, 100.0, Rgba::rgb(0, 0, 0));
-            let (l, top, right, bottom) = ink_box(&c, Rect::new(0.0, 0.0, 200.0, 200.0), |p| p[0] < 200);
+            let (l, top, right, bottom) =
+                ink_box(&c, Rect::new(0.0, 0.0, 200.0, 200.0), |p| p[0] < 200);
             let (x, y) = ((l + right) / 2.0, (top + bottom) / 2.0);
             // Within a dp of the place's centre, three pixels a dp.
-            assert!((x - 100.0).abs() <= 3.0 && (y - 100.0).abs() <= 3.0, "{icon:?} centred: ({x}, {y})");
-            assert!(right - l <= 66.0 && bottom - top <= 66.0, "{icon:?} within 22 dp: {}x{}", right - l, bottom - top);
+            assert!(
+                (x - 100.0).abs() <= 3.0 && (y - 100.0).abs() <= 3.0,
+                "{icon:?} centred: ({x}, {y})"
+            );
+            assert!(
+                right - l <= 66.0 && bottom - top <= 66.0,
+                "{icon:?} within 22 dp: {}x{}",
+                right - l,
+                bottom - top
+            );
         }
     }
 
@@ -3033,29 +4400,71 @@ mod tests {
         let f = crate::font::bundled();
         let draw = |mark: WlanMark| {
             let mut c = Canvas::filled(1200, 160, t.pal.bg);
-            let bar = Bar { clock: "01:27", battery: Some((40, Some(Bolt::Charging))), wlan: Some(mark), data: None, slot: None, temp: None };
+            let bar = Bar {
+                clock: "01:27",
+                battery: Some((40, Some(Bolt::Charging))),
+                wlan: Some(mark),
+                data: None,
+                slot: None,
+                temp: None,
+            };
             status_bar(&mut c, &t, &f, &bar, t.pal.status);
             c
         };
-        let full = WlanMark { level: 3, receiving: true, sending: true, speed: "7.02".into(), unit: "KB/s" };
+        let full = WlanMark {
+            level: 3,
+            receiving: true,
+            sending: true,
+            speed: "7.02".into(),
+            unit: "KB/s",
+        };
         let c = draw(full);
         let inked = |p: &[u8]| p[0] < 220;
         let fan = ink_box(&c, Rect::new(920.0, 40.0, 49.0, 70.0), inked);
-        assert!((fan.0 - 930.0).abs() <= 1.0 && (fan.1 - 59.0).abs() <= 1.0 && (fan.3 - 95.0).abs() <= 1.0, "fan {fan:?}");
+        assert!(
+            (fan.0 - 930.0).abs() <= 1.0
+                && (fan.1 - 59.0).abs() <= 1.0
+                && (fan.3 - 95.0).abs() <= 1.0,
+            "fan {fan:?}"
+        );
         for row in [85.0, 90.0] {
             let arrow = ink_box(&c, Rect::new(965.0, row, 20.0, 1.0), |p| p[0] < 200);
-            assert!((arrow.0 - 970.0).abs() <= 1.0 && (arrow.2 - 980.0).abs() <= 1.0, "arrow row {row}: {arrow:?}");
+            assert!(
+                (arrow.0 - 970.0).abs() <= 1.0 && (arrow.2 - 980.0).abs() <= 1.0,
+                "arrow row {row}: {arrow:?}"
+            );
         }
         let figures = ink_box(&c, Rect::new(840.0, 45.0, 85.0, 30.0), inked);
         let unit = ink_box(&c, Rect::new(840.0, 76.0, 85.0, 24.0), inked);
-        assert!((figures.1 - 54.0).abs() <= 1.0 && (figures.3 - 72.0).abs() <= 1.0, "figures {figures:?}");
-        assert!((unit.1 - 80.0).abs() <= 1.0 && (unit.3 - 96.0).abs() <= 1.0, "unit {unit:?}");
-        assert!((fan.0 - figures.2.max(unit.2) - 13.0).abs() <= 1.5, "the speed ends short of the fan: {figures:?} {unit:?}");
+        assert!(
+            (figures.1 - 54.0).abs() <= 1.0 && (figures.3 - 72.0).abs() <= 1.0,
+            "figures {figures:?}"
+        );
+        assert!(
+            (unit.1 - 80.0).abs() <= 1.0 && (unit.3 - 96.0).abs() <= 1.0,
+            "unit {unit:?}"
+        );
+        assert!(
+            (fan.0 - figures.2.max(unit.2) - 13.0).abs() <= 1.5,
+            "the speed ends short of the fan: {figures:?} {unit:?}"
+        );
         // A weak signal lights the slice alone, and data going neither way
         // leaves both arrows dim, in the battery's empty grey.
-        let c = draw(WlanMark { level: 1, receiving: false, sending: false, speed: "0.00".into(), unit: "KB/s" });
+        let c = draw(WlanMark {
+            level: 1,
+            receiving: false,
+            sending: false,
+            speed: "0.00".into(),
+            unit: "KB/s",
+        });
         let dim = over(t.pal.battery.empty, t.pal.bg);
-        let at = |x: u32, y: u32| Rgba::rgb(c.data[((y * 1200 + x) * 4) as usize], c.data[((y * 1200 + x) * 4 + 1) as usize], c.data[((y * 1200 + x) * 4 + 2) as usize]);
+        let at = |x: u32, y: u32| {
+            Rgba::rgb(
+                c.data[((y * 1200 + x) * 4) as usize],
+                c.data[((y * 1200 + x) * 4 + 1) as usize],
+                c.data[((y * 1200 + x) * 4 + 2) as usize],
+            )
+        };
         assert_eq!(at(954, 62), dim, "the outer arc");
         assert_eq!(at(954, 75), dim, "the inner arc");
         assert_eq!(at(954, 88), t.pal.status, "the slice");
@@ -3070,8 +4479,21 @@ mod tests {
         let t = Theme::dark(1200, 2608, 3.0);
         let f = crate::font::bundled();
         let mut c = Canvas::filled(1200, 160, t.pal.bg);
-        let wlan = Some(WlanMark { level: 3, receiving: true, sending: true, speed: "0.00".into(), unit: "KB/s" });
-        let bar = Bar { clock: "01:27", battery: Some((40, None)), wlan, data: Some(false), slot: Some("B"), temp: Some(362) };
+        let wlan = Some(WlanMark {
+            level: 3,
+            receiving: true,
+            sending: true,
+            speed: "0.00".into(),
+            unit: "KB/s",
+        });
+        let bar = Bar {
+            clock: "01:27",
+            battery: Some((40, None)),
+            wlan,
+            data: Some(false),
+            slot: Some("B"),
+            temp: Some(362),
+        };
         status_bar(&mut c, &t, &f, &bar, t.pal.status);
         // Runs of inked columns on the bar's right half, those a few pixels
         // apart taken as one mark.
@@ -3083,10 +4505,17 @@ mod tests {
                 _ => marks.push((x, x + 1)),
             }
         }
-        assert_eq!(marks.len(), 6, "speed, temperature, badge, lock, fan and battery: {marks:?}");
+        assert_eq!(
+            marks.len(),
+            6,
+            "speed, temperature, badge, lock, fan and battery: {marks:?}"
+        );
         for k in 0..4 {
             let gap = marks[k + 1].0 - marks[k].1;
-            assert!((gap as i32 - 13).abs() <= 1, "mark {k} stands 13 pixels short of the next: {marks:?}");
+            assert!(
+                (gap as i32 - 13).abs() <= 1,
+                "mark {k} stands 13 pixels short of the next: {marks:?}"
+            );
         }
     }
 
@@ -3096,19 +4525,36 @@ mod tests {
         // bar's middle, here with a capital 20 tall cut out of it.
         let t = Theme::dark(1200, 2608, 3.0);
         let f = crate::font::bundled();
-        let (art, _, oy, side) = badge(&t, &f, "B", 1000.0, t.m.status_cy, Rgba::rgb(255, 255, 255));
+        let (art, _, oy, side) =
+            badge(&t, &f, "B", 1000.0, t.m.status_cy, Rgba::rgb(255, 255, 255));
         assert!((side - 38.0).abs() < 0.1);
         let alpha = |x: u32, y: u32| art.data[((y * art.w + x) * 4 + 3) as usize];
-        let rows: Vec<u32> = (0..art.h).filter(|&y| (0..art.w).any(|x| alpha(x, y) > 128)).collect();
-        let cols = (0..art.w).filter(|&x| (0..art.h).any(|y| alpha(x, y) > 128)).count();
-        assert!((rows.len() as i32 - 38).abs() <= 1 && (cols as i32 - 38).abs() <= 1, "{} by {cols}", rows.len());
+        let rows: Vec<u32> = (0..art.h)
+            .filter(|&y| (0..art.w).any(|x| alpha(x, y) > 128))
+            .collect();
+        let cols = (0..art.w)
+            .filter(|&x| (0..art.h).any(|y| alpha(x, y) > 128))
+            .count();
+        assert!(
+            (rows.len() as i32 - 38).abs() <= 1 && (cols as i32 - 38).abs() <= 1,
+            "{} by {cols}",
+            rows.len()
+        );
         let middle = oy as f32 + (rows[0] + rows[rows.len() - 1] + 1) as f32 / 2.0;
-        assert!((middle - t.m.status_cy).abs() <= 1.0, "on the bar's middle: {middle}");
+        assert!(
+            (middle - t.m.status_cy).abs() <= 1.0,
+            "on the bar's middle: {middle}"
+        );
         // Rows of the badge, clear of its corners, where the letter lets what
         // is behind show through.
         let inner = rows[0] + 6..rows[rows.len() - 1] - 5;
-        let cut = inner.filter(|&y| (6..art.w - 6).any(|x| alpha(x, y) < 64)).count();
-        assert!((cut as i32 - 20).abs() <= 1, "the capital cut out: {cut} rows");
+        let cut = inner
+            .filter(|&y| (6..art.w - 6).any(|x| alpha(x, y) < 64))
+            .count();
+        assert!(
+            (cut as i32 - 20).abs() <= 1,
+            "the capital cut out: {cut} rows"
+        );
     }
 
     #[test]
@@ -3117,16 +4563,32 @@ mod tests {
         let (m, white, cy) = (&t.m, Rgba::rgb(255, 255, 255), t.m.status_cy);
         let (shut, ox, oy, w) = lock_mark(&t, false, 1000.0, cy, white);
         let (open, _, _, _) = lock_mark(&t, true, 1000.0, cy, white);
-        let alpha = |art: &Canvas, x: f32, y: f32| art.data[(((y - oy as f32) as u32 * art.w + (x - ox as f32) as u32) * 4 + 3) as usize];
-        let rows = |art: &Canvas| -> Vec<u32> { (0..art.h).filter(|&y| (0..art.w).any(|x| art.data[((y * art.w + x) * 4 + 3) as usize] > 128)).collect() };
+        let alpha = |art: &Canvas, x: f32, y: f32| {
+            art.data[(((y - oy as f32) as u32 * art.w + (x - ox as f32) as u32) * 4 + 3) as usize]
+        };
+        let rows = |art: &Canvas| -> Vec<u32> {
+            (0..art.h)
+                .filter(|&y| (0..art.w).any(|x| art.data[((y * art.w + x) * 4 + 3) as usize] > 128))
+                .collect()
+        };
         let (shut_rows, open_rows) = (rows(&shut), rows(&open));
-        assert!((shut_rows.len() as i32 - 38).abs() <= 1, "12.67 dp tall shut: {}", shut_rows.len());
+        assert!(
+            (shut_rows.len() as i32 - 38).abs() <= 1,
+            "12.67 dp tall shut: {}",
+            shut_rows.len()
+        );
         let middle = oy as f32 + (shut_rows[0] + shut_rows[shut_rows.len() - 1] + 1) as f32 / 2.0;
         assert!((middle - cy).abs() <= 1.0, "on the bar's middle: {middle}");
-        assert!(((shut_rows[0] - open_rows[0]) as f32 - m.dp(LOCK_RISE_DP)).abs() <= 1.0, "open, the shackle rises");
+        assert!(
+            ((shut_rows[0] - open_rows[0]) as f32 - m.dp(LOCK_RISE_DP)).abs() <= 1.0,
+            "open, the shackle rises"
+        );
         assert_eq!(shut_rows.last(), open_rows.last(), "on the same body");
         // Just above the body, down the right leg: inked shut, clear open.
-        let (mid, body) = (1000.0 - w / 2.0, cy + m.dp(LOCK_MARK_H_DP) / 2.0 - m.dp(LOCK_BODY_H_DP));
+        let (mid, body) = (
+            1000.0 - w / 2.0,
+            cy + m.dp(LOCK_MARK_H_DP) / 2.0 - m.dp(LOCK_BODY_H_DP),
+        );
         let leg = mid + (m.dp(LOCK_SHACKLE_W_DP) - m.dp(LOCK_STROKE_DP)) / 2.0;
         assert!(alpha(&shut, leg, body - 2.0) > 200 && alpha(&open, leg, body - 2.0) < 30);
         // The keyhole lets what is behind show through the body.
@@ -3143,7 +4605,14 @@ mod tests {
         let f = crate::font::bundled();
         let draw = |kind| {
             let mut c = Canvas::filled(1200, 160, Rgba::rgb(0, 0, 0));
-            let bar = Bar { clock: "01:27", battery: Some((64, Some(kind))), wlan: None, data: None, slot: None, temp: None };
+            let bar = Bar {
+                clock: "01:27",
+                battery: Some((64, Some(kind))),
+                wlan: None,
+                data: None,
+                slot: None,
+                temp: None,
+            };
             status_bar(&mut c, &t, &f, &bar, t.pal.status);
             c
         };
@@ -3152,18 +4621,43 @@ mod tests {
         let cover = |p: &[u8]| p[0] as f32 / t.pal.battery.bolt.a as f32;
         let steps = |c: &Canvas| -> Vec<u32> {
             let lefts: Vec<(u32, u32)> = (40..120)
-                .filter_map(|y| (1064..1100).find(|&x| cover(&c.data[((y * 1200 + x) * 4) as usize..]) > 0.6).map(|x| (y, x)))
+                .filter_map(|y| {
+                    (1064..1100)
+                        .find(|&x| cover(&c.data[((y * 1200 + x) * 4) as usize..]) > 0.6)
+                        .map(|x| (y, x))
+                })
                 .collect();
-            lefts.windows(2).filter(|w| w[1].1 >= w[0].1 + 3).map(|w| w[1].0).collect()
+            lefts
+                .windows(2)
+                .filter(|w| w[1].1 >= w[0].1 + 3)
+                .map(|w| w[1].0)
+                .collect()
         };
         let quick = draw(Bolt::Quick);
-        let ink = ink_box(&quick, Rect::new(1064.0, 40.0, 36.0, 80.0), |p| cover(p) > 0.25);
+        let ink = ink_box(&quick, Rect::new(1064.0, 40.0, 36.0, 80.0), |p| {
+            cover(p) > 0.25
+        });
         assert_eq!(ink, (1069.0, 60.0, 1086.0, 94.0), "where the stock bolt is");
-        assert_eq!(steps(&quick), [76, 85], "two steps where the stock bolt's are");
+        assert_eq!(
+            steps(&quick),
+            [76, 85],
+            "two steps where the stock bolt's are"
+        );
         let plain = draw(Bolt::Charging);
-        let ink = ink_box(&plain, Rect::new(1064.0, 40.0, 36.0, 80.0), |p| cover(p) > 0.25);
-        assert!(ink.0 >= 1068.0 && ink.2 <= 1092.0 && ((ink.1 + ink.3) / 2.0 - t.m.status_cy).abs() <= 1.0, "in the same box: {ink:?}");
-        assert_eq!(steps(&plain).len(), 1, "one step while the charger charges as it may");
+        let ink = ink_box(&plain, Rect::new(1064.0, 40.0, 36.0, 80.0), |p| {
+            cover(p) > 0.25
+        });
+        assert!(
+            ink.0 >= 1068.0
+                && ink.2 <= 1092.0
+                && ((ink.1 + ink.3) / 2.0 - t.m.status_cy).abs() <= 1.0,
+            "in the same box: {ink:?}"
+        );
+        assert_eq!(
+            steps(&plain).len(),
+            1,
+            "one step while the charger charges as it may"
+        );
     }
 
     #[test]
@@ -3174,37 +4668,95 @@ mod tests {
         let t = Theme::light(1200, 2608, 3.0);
         let f = crate::font::bundled();
         let mut c = Canvas::filled(1200, 2608, t.pal.bg);
-        let rows = list(&mut c, &t, &f, 621.0, &[Row::new("安全性").trail(Trail::Choice("无"))]);
+        let rows = list(
+            &mut c,
+            &t,
+            &f,
+            621.0,
+            &[Row::new("安全性").trail(Trail::Choice("无"))],
+        );
         let row = rows.rows[0];
-        let arrows = ink_box(&c, Rect::new(1070.0, row.y + 55.0, 55.0, row.h - 110.0), |p| p[0] < 252);
-        let (cy, w, h) = ((arrows.1 + arrows.3) / 2.0, arrows.2 - arrows.0, arrows.3 - arrows.1);
-        assert!((arrows.2 - 1116.0).abs() <= 1.0 && (w - 30.0).abs() <= 1.5 && (h - 46.0).abs() <= 1.5, "arrows {arrows:?}");
-        assert!((cy - (row.y + row.h / 2.0)).abs() <= 1.0, "the arrows centred on the row: {cy}");
+        let arrows = ink_box(
+            &c,
+            Rect::new(1070.0, row.y + 55.0, 55.0, row.h - 110.0),
+            |p| p[0] < 252,
+        );
+        let (cy, w, h) = (
+            (arrows.1 + arrows.3) / 2.0,
+            arrows.2 - arrows.0,
+            arrows.3 - arrows.1,
+        );
+        assert!(
+            (arrows.2 - 1116.0).abs() <= 1.0 && (w - 30.0).abs() <= 1.5 && (h - 46.0).abs() <= 1.5,
+            "arrows {arrows:?}"
+        );
+        assert!(
+            (cy - (row.y + row.h / 2.0)).abs() <= 1.0,
+            "the arrows centred on the row: {cy}"
+        );
         let stock = Rect::new(36.0, 621.0, 1128.0, 176.0);
-        let picks = choices(&mut c, &t, &f, stock, &["无", "WPA/WPA2-Personal", "WPA3-Personal"], Some(0), None);
+        let picks = choices(
+            &mut c,
+            &t,
+            &f,
+            stock,
+            &["无", "WPA/WPA2-Personal", "WPA3-Personal"],
+            Some(0),
+            None,
+        );
         let (first, last) = (picks[0], picks[2]);
-        assert!((first.x - 256.0).abs() <= 0.5 && (first.x + first.w - 1114.0).abs() <= 0.5, "across {}..{}", first.x, first.x + first.w);
-        assert!((first.y - 690.0).abs() <= 0.5 && (last.y + last.h - 1083.0).abs() <= 0.5, "down {}..{}", first.y, last.y + last.h);
-        let tick = ink_box(&c, Rect::new(990.0, first.y, 60.0, first.h), |p| p[2] > 200 && p[0] < 150);
+        assert!(
+            (first.x - 256.0).abs() <= 0.5 && (first.x + first.w - 1114.0).abs() <= 0.5,
+            "across {}..{}",
+            first.x,
+            first.x + first.w
+        );
+        assert!(
+            (first.y - 690.0).abs() <= 0.5 && (last.y + last.h - 1083.0).abs() <= 0.5,
+            "down {}..{}",
+            first.y,
+            last.y + last.h
+        );
+        let tick = ink_box(&c, Rect::new(990.0, first.y, 60.0, first.h), |p| {
+            p[2] > 200 && p[0] < 150
+        });
         let centre = ((tick.0 + tick.2) / 2.0, (tick.1 + tick.3) / 2.0);
-        assert!((centre.0 - 1021.4).abs() <= 1.5 && (centre.1 - 755.9).abs() <= 1.5, "the tick centred where the stock one is: {centre:?}");
-        assert!((tick.2 - tick.0 - 37.0).abs() <= 2.0 && (tick.3 - tick.1 - 30.0).abs() <= 2.0, "and as big: {tick:?}");
+        assert!(
+            (centre.0 - 1021.4).abs() <= 1.5 && (centre.1 - 755.9).abs() <= 1.5,
+            "the tick centred where the stock one is: {centre:?}"
+        );
+        assert!(
+            (tick.2 - tick.0 - 37.0).abs() <= 2.0 && (tick.3 - tick.1 - 30.0).abs() <= 2.0,
+            "and as big: {tick:?}"
+        );
     }
 
     #[test]
     fn the_bars_round_button_mirrors_the_back_control_and_centres_its_glyph() {
         let t = Theme::light(1440, 3200, 3.5);
         let (back, button) = (back_rect(&t), button_rect(&t));
-        assert_eq!((button.x + button.w, button.y, button.w, button.h), (1440.0 - back.x, back.y, back.w, back.h));
+        assert_eq!(
+            (button.x + button.w, button.y, button.w, button.h),
+            (1440.0 - back.x, back.y, back.w, back.h)
+        );
         let (cx, cy, r) = button_disc(&t);
         let disc = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
         for glyph in [Glyph::Terminal, Glyph::Done] {
             let mut c = Canvas::new(1440, 400);
             button_glyph(&mut c, &t, glyph, Rgba::rgb(0, 0, 0));
             let (l, top, right, bottom) = ink_box(&c, disc, |p| p[3] > 0);
-            let ((x, y), size) = (((l + right) / 2.0, (top + bottom) / 2.0), (right - l, bottom - top));
-            assert!((x - cx).abs() <= 1.0 && (y - cy).abs() <= 1.0, "{glyph:?} centred on the disc: ({x}, {y}) for ({cx}, {cy})");
-            assert!(size.0 < r * 1.2 && size.1 < r, "{glyph:?} well inside it: {size:?}");
+            let ((x, y), size) = (
+                ((l + right) / 2.0, (top + bottom) / 2.0),
+                (right - l, bottom - top),
+            );
+            assert!(
+                (x - cx).abs() <= 1.0 && (y - cy).abs() <= 1.0,
+                "{glyph:?} centred on the disc: ({x}, {y}) for ({cx}, {cy})"
+            );
+            assert!(
+                size.0 < r * 1.2 && size.1 < r,
+                "{glyph:?} well inside it: {size:?}"
+            );
         }
     }
 
@@ -3224,14 +4776,24 @@ mod tests {
         for text in ["", "bf"] {
             let mut c = Canvas::new(t.m.w, t.m.dp(120.0) as u32);
             let field = search_field(&mut c, &t, &f, x, w, cy, text, "搜索功能与分区");
-            assert_eq!(ink_box(&c, field.field, blue).0, f32::MAX, "{text:?}: the field is drawn without its cursor");
+            assert_eq!(
+                ink_box(&c, field.field, blue).0,
+                f32::MAX,
+                "{text:?}: the field is drawn without its cursor"
+            );
             // The cursor laid over the field, as the page does while it shows.
             c.lay(&field.caret.art, field.caret.x, field.caret.y, 1.0);
             let (cl, ct, cr, cb) = ink_box(&c, field.field, blue);
             let left = x + t.m.search_text_inset + c.text_width(&f.heading, text, px);
             let across = format!("{cl}..{cr} × {ct}..{cb}");
-            assert!((cl - left).abs() <= 1.0 && (cr - left - t.m.dp(2.0)).abs() <= 1.0, "{text:?}: 2 dp wide from where the next character goes: {across}");
-            assert!((ct - (base + line_top)).abs() <= 1.0 && (cb - (base + line_bottom)).abs() <= 1.0, "{text:?}: as tall as the line: {across}");
+            assert!(
+                (cl - left).abs() <= 1.0 && (cr - left - t.m.dp(2.0)).abs() <= 1.0,
+                "{text:?}: 2 dp wide from where the next character goes: {across}"
+            );
+            assert!(
+                (ct - (base + line_top)).abs() <= 1.0 && (cb - (base + line_bottom)).abs() <= 1.0,
+                "{text:?}: as tall as the line: {across}"
+            );
         }
     }
 
@@ -3245,17 +4807,45 @@ mod tests {
         // of the digits.
         let rgba = |c: Rgba| [c.r, c.g, c.b, c.a];
         let half = battery(&t, &f, 50, false, right, cy);
-        assert_eq!(pixel(&half, 948.0, cy - 15.0), rgba(ink.level), "a quarter in is filled");
-        assert_eq!(pixel(&half, 983.0, cy - 15.0), rgba(ink.empty), "three quarters in is empty");
+        assert_eq!(
+            pixel(&half, 948.0, cy - 15.0),
+            rgba(ink.level),
+            "a quarter in is filled"
+        );
+        assert_eq!(
+            pixel(&half, 983.0, cy - 15.0),
+            rgba(ink.empty),
+            "three quarters in is empty"
+        );
         let charging = battery(&t, &f, 50, true, right, cy);
-        assert_eq!(pixel(&charging, 948.0, cy - 15.0), rgba(ink.charging), "the cable in fills green");
+        assert_eq!(
+            pixel(&charging, 948.0, cy - 15.0),
+            rgba(ink.charging),
+            "the cable in fills green"
+        );
         let low = battery(&t, &f, 15, false, right, cy);
-        assert_eq!(pixel(&low, 935.0, cy), rgba(ink.low), "low and unplugged fills red");
-        assert_eq!(pixel(&low, 948.0, cy - 15.0), rgba(ink.empty), "past 15% it is empty");
+        assert_eq!(
+            pixel(&low, 935.0, cy),
+            rgba(ink.low),
+            "low and unplugged fills red"
+        );
+        assert_eq!(
+            pixel(&low, 948.0, cy - 15.0),
+            rgba(ink.empty),
+            "past 15% it is empty"
+        );
         let low_charging = battery(&t, &f, 15, true, right, cy);
-        assert_eq!(pixel(&low_charging, 935.0, cy), rgba(ink.charging), "low but charging stays green");
+        assert_eq!(
+            pixel(&low_charging, 935.0, cy),
+            rgba(ink.charging),
+            "low but charging stays green"
+        );
         let full = battery(&t, &f, 100, false, right, cy);
-        assert_eq!(pixel(&full, right - 1.5, cy), rgba(ink.level), "a full battery fills its cap");
+        assert_eq!(
+            pixel(&full, right - 1.5, cy),
+            rgba(ink.level),
+            "a full battery fills its cap"
+        );
     }
 
     #[test]
@@ -3273,9 +4863,20 @@ mod tests {
             }
             n
         };
-        assert!(holes(&battery(&t, &f, 100, false, right, cy)) > 60, "the digits show the page through");
-        assert_eq!(holes(&battery(&t, &f, 100, true, right, cy)), 0, "white digits over green");
-        assert_eq!(holes(&battery(&t, &f, 15, false, right, cy)), 0, "white digits over red");
+        assert!(
+            holes(&battery(&t, &f, 100, false, right, cy)) > 60,
+            "the digits show the page through"
+        );
+        assert_eq!(
+            holes(&battery(&t, &f, 100, true, right, cy)),
+            0,
+            "white digits over green"
+        );
+        assert_eq!(
+            holes(&battery(&t, &f, 15, false, right, cy)),
+            0,
+            "white digits over red"
+        );
     }
 
     #[test]
@@ -3293,20 +4894,35 @@ mod tests {
             "This zip isn't signed. Turn off “Verify zip signatures”, then try again.",
             "這個刷機包未簽署，請關閉「驗證刷機包簽章」後重試。",
         ];
-        let latin = |ch: char| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':' | '\'');
+        let latin = |ch: char| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':' | '\'')
+        };
         for text in texts {
             for ems in 6..30 {
                 let max_w = ems as f32 * px;
                 let lines = wrap(&c, &f.body, text, px, max_w);
                 for l in &lines {
-                    assert!(!(l.chars().count() > 1 && l.ends_with(|ch| NO_LINE_END.contains(ch))), "{l:?} ends on an opening bracket: {lines:?}");
-                    assert!(!l.starts_with(|ch| NO_LINE_START.contains(ch)), "{l:?} starts with closing punctuation: {lines:?}");
+                    assert!(
+                        !(l.chars().count() > 1 && l.ends_with(|ch| NO_LINE_END.contains(ch))),
+                        "{l:?} ends on an opening bracket: {lines:?}"
+                    );
+                    assert!(
+                        !l.starts_with(|ch| NO_LINE_START.contains(ch)),
+                        "{l:?} starts with closing punctuation: {lines:?}"
+                    );
                 }
                 let squeezed = |s: &str| s.chars().filter(|ch| *ch != ' ').collect::<String>();
-                assert_eq!(squeezed(&lines.concat()), squeezed(text), "nothing lost at {ems} em");
+                assert_eq!(
+                    squeezed(&lines.concat()),
+                    squeezed(text),
+                    "nothing lost at {ems} em"
+                );
                 for word in text.split(|ch: char| !latin(ch)).filter(|w| !w.is_empty()) {
                     if c.text_width(&f.body, word, px) <= max_w {
-                        assert!(lines.iter().any(|l| l.contains(word)), "{word:?} broken at {ems} em: {lines:?}");
+                        assert!(
+                            lines.iter().any(|l| l.contains(word)),
+                            "{word:?} broken at {ems} em: {lines:?}"
+                        );
                     }
                 }
             }
@@ -3321,33 +4937,79 @@ mod tests {
         // A text, what closes in it and so starts no line, and what opens
         // in it and so ends none.
         let texts = [
-            ("Güncelleme birleştirilene kadar super içindeki bölümler yazılmaz. Lütfen işlem bitene kadar kapatmayın.", ".,", ""),
-            ("Разделы в super не прошиваются, пока обновление не объединено. Выключите «Проверять подписи» и повторите.", ".,»", "«"),
-            ("Dieses Zip ist nicht signiert. Schalte „Zip-Signaturen prüfen“ aus und versuche es dann erneut.", ".“", "„"),
-            ("Ce zip n’est pas signé. Désactivez «\u{a0}Vérifier les signatures\u{a0}» puis réessayez\u{a0}: rien n’a été écrit.", ".»", "«"),
-            ("Gói này không có chữ ký. Hãy tắt “Xác minh chữ ký zip” rồi thử lại.", ".”", "“"),
-            ("このパッケージは署名されていません。「署名を検証」をオフにして、もういちどインストールしてください。", "。、」ー", "「"),
+            (
+                "Güncelleme birleştirilene kadar super içindeki bölümler yazılmaz. Lütfen işlem bitene kadar kapatmayın.",
+                ".,",
+                "",
+            ),
+            (
+                "Разделы в super не прошиваются, пока обновление не объединено. Выключите «Проверять подписи» и повторите.",
+                ".,»",
+                "«",
+            ),
+            (
+                "Dieses Zip ist nicht signiert. Schalte „Zip-Signaturen prüfen“ aus und versuche es dann erneut.",
+                ".“",
+                "„",
+            ),
+            (
+                "Ce zip n’est pas signé. Désactivez «\u{a0}Vérifier les signatures\u{a0}» puis réessayez\u{a0}: rien n’a été écrit.",
+                ".»",
+                "«",
+            ),
+            (
+                "Gói này không có chữ ký. Hãy tắt “Xác minh chữ ký zip” rồi thử lại.",
+                ".”",
+                "“",
+            ),
+            (
+                "このパッケージは署名されていません。「署名を検証」をオフにして、もういちどインストールしてください。",
+                "。、」ー",
+                "「",
+            ),
         ];
         for (text, closes, opens) in texts {
             for ems in 6..30 {
                 let max_w = ems as f32 * px;
                 let lines = wrap(&c, &f.body, text, px, max_w);
                 for l in &lines {
-                    assert!(!(l.chars().count() > 1 && l.ends_with(|ch| opens.contains(ch))), "{l:?} ends on what opens: {lines:?}");
-                    assert!(!l.starts_with(|ch| closes.contains(ch)), "{l:?} starts with what closes: {lines:?}");
+                    assert!(
+                        !(l.chars().count() > 1 && l.ends_with(|ch| opens.contains(ch))),
+                        "{l:?} ends on what opens: {lines:?}"
+                    );
+                    assert!(
+                        !l.starts_with(|ch| closes.contains(ch)),
+                        "{l:?} starts with what closes: {lines:?}"
+                    );
                 }
                 let squeezed = |s: &str| s.chars().filter(|ch| *ch != ' ').collect::<String>();
-                assert_eq!(squeezed(&lines.concat()), squeezed(text), "nothing lost at {ems} em");
-                for word in text.split(|ch: char| !in_word(ch)).filter(|w| !w.is_empty()) {
+                assert_eq!(
+                    squeezed(&lines.concat()),
+                    squeezed(text),
+                    "nothing lost at {ems} em"
+                );
+                for word in text
+                    .split(|ch: char| !in_word(ch))
+                    .filter(|w| !w.is_empty())
+                {
                     if c.text_width(&f.body, word, px) <= max_w {
-                        assert!(lines.iter().any(|l| l.contains(word)), "{word:?} broken at {ems} em: {lines:?}");
+                        assert!(
+                            lines.iter().any(|l| l.contains(word)),
+                            "{word:?} broken at {ems} em: {lines:?}"
+                        );
                     }
                 }
             }
         }
         // Kana set no spaces, and break wherever the line is full.
         let kana = wrap(&c, &f.body, "インストールしてください", px, 6.0 * px);
-        assert!(kana.len() > 1 && kana.iter().all(|l| c.text_width(&f.body, l, px) <= 7.0 * px), "{kana:?}");
+        assert!(
+            kana.len() > 1
+                && kana
+                    .iter()
+                    .all(|l| c.text_width(&f.body, l, px) <= 7.0 * px),
+            "{kana:?}"
+        );
     }
 
     #[test]
@@ -3360,9 +5022,18 @@ mod tests {
         let max_w = c.text_width(&f.body, path, px) * 0.8;
         let lines = wrap(&c, &f.body, text, px, max_w);
         assert_eq!(lines.concat(), text, "nothing lost: {lines:?}");
-        let broken = lines.iter().position(|l| l.ends_with("com.android.art/")).expect("the long path breaks after a slash");
-        assert!(lines[broken].starts_with("/data/misc/"), "the path starts its own line: {lines:?}");
-        assert!(lines[broken + 1].starts_with("dalvik-cache"), "and goes on with what follows the slash: {lines:?}");
+        let broken = lines
+            .iter()
+            .position(|l| l.ends_with("com.android.art/"))
+            .expect("the long path breaks after a slash");
+        assert!(
+            lines[broken].starts_with("/data/misc/"),
+            "the path starts its own line: {lines:?}"
+        );
+        assert!(
+            lines[broken + 1].starts_with("dalvik-cache"),
+            "and goes on with what follows the slash: {lines:?}"
+        );
     }
 
     #[test]
@@ -3372,20 +5043,48 @@ mod tests {
         let c = Canvas::new(1, 1);
         let width = |line: &String| c.text_width(&f.heading, line, t.m.row_title_px);
         let short = layout(&c, &t, &f, &Row::new("Install from internal storage"));
-        assert_eq!((short.title_lines.len(), short.h), (1, t.m.row_h), "a title that fits keeps its line and the row its height");
+        assert_eq!(
+            (short.title_lines.len(), short.h),
+            (1, t.m.row_h),
+            "a title that fits keeps its line and the row its height"
+        );
         let title = "Aus dem internen Speicher installieren und danach in das System neu starten";
         let long = layout(&c, &t, &f, &Row::new(title));
-        assert!(long.title_lines.len() > 1 && long.title_lines.join(" ") == title, "all of it, on lines: {:?}", long.title_lines);
-        assert!(long.title_lines.iter().all(|line| width(line) <= long.text_max), "each line in the row: {:?}", long.title_lines);
+        assert!(
+            long.title_lines.len() > 1 && long.title_lines.join(" ") == title,
+            "all of it, on lines: {:?}",
+            long.title_lines
+        );
+        assert!(
+            long.title_lines
+                .iter()
+                .all(|line| width(line) <= long.text_max),
+            "each line in the row: {:?}",
+            long.title_lines
+        );
         assert!(long.h > t.m.row_h, "the row grows with its lines");
         let under = layout(&c, &t, &f, &Row::new(title).subtitle("Vom Telefon"));
-        assert!(under.h > long.h, "and has the line under the title below them");
+        assert!(
+            under.h > long.h,
+            "and has the line under the title below them"
+        );
         // A file's name is one word, and ends where the row does.
-        let name = "OTA_ishtar_OS3.0.305.0.WMACNXM_20260412_full_package_signed_for_recovery_install.zip";
+        let name =
+            "OTA_ishtar_OS3.0.305.0.WMACNXM_20260412_full_package_signed_for_recovery_install.zip";
         let file = layout(&c, &t, &f, &Row::new(name));
-        assert_eq!((file.title_lines.as_slice(), file.h), ([name.to_string()].as_slice(), t.m.row_h));
+        assert_eq!(
+            (file.title_lines.as_slice(), file.h),
+            ([name.to_string()].as_slice(), t.m.row_h)
+        );
         // A network's name stays beside its fan, whatever it is called.
-        let network = layout(&c, &t, &f, &Row::new("The network of the house at the end of the long road").fan(2).trail(Trail::Network { locked: true }));
+        let network = layout(
+            &c,
+            &t,
+            &f,
+            &Row::new("The network of the house at the end of the long road")
+                .fan(2)
+                .trail(Trail::Network { locked: true }),
+        );
         assert_eq!(network.title_lines.len(), 1);
     }
 
@@ -3394,21 +5093,59 @@ mod tests {
         let t = Theme::light(1200, 2608, 3.0);
         let f = crate::font::bundled();
         let c = Canvas::new(1, 1);
-        let fits = layout(&c, &t, &f, &Row::new("Time zone").trail(Trail::Value("China Standard Time")));
-        assert_eq!((fits.title_lines.len(), fits.value_lines.len(), fits.value_max, fits.h), (1, 1, None, t.m.row_h), "side by side where they fit");
+        let fits = layout(
+            &c,
+            &t,
+            &f,
+            &Row::new("Time zone").trail(Trail::Value("China Standard Time")),
+        );
+        assert_eq!(
+            (
+                fits.title_lines.len(),
+                fits.value_lines.len(),
+                fits.value_max,
+                fits.h
+            ),
+            (1, 1, None, t.m.row_h),
+            "side by side where they fit"
+        );
         // Neither is cut short where both can go onto lines.
-        let (title, value) = ("Часовой пояс устройства", "Всемирное координированное время");
+        let (title, value) = (
+            "Часовой пояс устройства",
+            "Всемирное координированное время",
+        );
         let tight = layout(&c, &t, &f, &Row::new(title).trail(Trail::Value(value)));
-        assert_eq!((tight.title_lines.join(" "), tight.value_lines.join(" ")), (title.to_string(), value.to_string()));
-        assert!(tight.title_lines.len() > 1 && tight.value_lines.len() > 1 && tight.value_max.is_none(), "{:?} {:?}", tight.title_lines, tight.value_lines);
-        assert!(tight.title_lines.iter().all(|line| c.text_width(&f.heading, line, t.m.row_title_px) <= tight.text_max));
-        assert!(tight.value_lines.iter().all(|line| c.text_width(&f.value, line, t.m.sub_px) <= tight.value_w));
+        assert_eq!(
+            (tight.title_lines.join(" "), tight.value_lines.join(" ")),
+            (title.to_string(), value.to_string())
+        );
+        assert!(
+            tight.title_lines.len() > 1 && tight.value_lines.len() > 1 && tight.value_max.is_none(),
+            "{:?} {:?}",
+            tight.title_lines,
+            tight.value_lines
+        );
+        assert!(tight.title_lines.iter().all(|line| c.text_width(
+            &f.heading,
+            line,
+            t.m.row_title_px
+        ) <= tight.text_max));
+        assert!(
+            tight
+                .value_lines
+                .iter()
+                .all(|line| c.text_width(&f.value, line, t.m.sub_px) <= tight.value_w)
+        );
         assert!(tight.h > t.m.row_h, "the row grows with them");
         // A value of one long word ends where its room does, and leaves
         // the title whole.
-        let name = "OTA_ishtar_OS3.0.305.0.WMACNXM_20260412_full_package_signed_for_recovery_install.zip";
+        let name =
+            "OTA_ishtar_OS3.0.305.0.WMACNXM_20260412_full_package_signed_for_recovery_install.zip";
         let file = layout(&c, &t, &f, &Row::new("Package").trail(Trail::Text(name)));
-        assert_eq!((file.title_lines.as_slice(), file.value_lines.len()), (["Package".to_string()].as_slice(), 1));
+        assert_eq!(
+            (file.title_lines.as_slice(), file.value_lines.len()),
+            (["Package".to_string()].as_slice(), 1)
+        );
         assert_eq!(file.value_max, Some(file.value_w), "cut short at its room");
     }
 
@@ -3418,28 +5155,66 @@ mod tests {
         let f = crate::font::bundled();
         let mut c = Canvas::filled(1200, 2608, t.pal.bg);
         let px = t.m.row_title_px;
-        assert_eq!(c.fitting(&f.heading, "Join", px, 300.0), px, "a word that fits keeps its size");
+        assert_eq!(
+            c.fitting(&f.heading, "Join", px, 300.0),
+            px,
+            "a word that fits keeps its size"
+        );
         let smaller = c.fitting(&f.heading, "Подключиться к этой сети", px, 300.0);
-        assert!(smaller < px && (c.text_width(&f.heading, "Подключиться к этой сети", smaller) - 300.0).abs() < 1.0, "{smaller}");
+        assert!(
+            smaller < px
+                && (c.text_width(&f.heading, "Подключиться к этой сети", smaller) - 300.0).abs()
+                    < 1.0,
+            "{smaller}"
+        );
         // The return key takes room from the space bar for a long word.
-        let enter = |keys: &[(Rect, Cap)]| keys.iter().find(|(_, cap)| *cap == Cap::Enter).unwrap().0;
-        let space = |keys: &[(Rect, Cap)]| keys.iter().find(|(_, cap)| *cap == Cap::Space).unwrap().0;
+        let enter =
+            |keys: &[(Rect, Cap)]| keys.iter().find(|(_, cap)| *cap == Cap::Enter).unwrap().0;
+        let space =
+            |keys: &[(Rect, Cap)]| keys.iter().find(|(_, cap)| *cap == Cap::Space).unwrap().0;
         let top = 2608.0 - keyboard_height(&t);
         let plain = keyboard(&mut c, &t, &f, Lang::En, top, Layer::Letters, None, "Join");
-        let wide = keyboard(&mut c, &t, &f, Lang::Ru, top, Layer::Letters, None, "Расшифровка");
+        let wide = keyboard(
+            &mut c,
+            &t,
+            &f,
+            Lang::Ru,
+            top,
+            Layer::Letters,
+            None,
+            "Расшифровка",
+        );
         assert!(enter(&wide).w > enter(&plain).w && space(&wide).w < space(&plain).w);
-        assert_eq!(enter(&wide).x + enter(&wide).w, enter(&plain).x + enter(&plain).w, "from the same right end");
-        assert!(space(&wide).w > enter(&wide).w, "and the space bar stays the widest key");
+        assert_eq!(
+            enter(&wide).x + enter(&wide).w,
+            enter(&plain).x + enter(&plain).w,
+            "from the same right end"
+        );
+        assert!(
+            space(&wide).w > enter(&wide).w,
+            "and the space bar stays the widest key"
+        );
         // A message too long for a line of the screen takes more.
         let dark = |c: &Canvas| ink_box(c, Rect::new(0.0, 2000.0, 1200.0, 608.0), |p| p[0] < 80);
         let mut c = Canvas::filled(1200, 2608, t.pal.bg);
         toast(&mut c, &t, &f, "Saved");
         let one = dark(&c);
         let mut c = Canvas::filled(1200, 2608, t.pal.bg);
-        toast(&mut c, &t, &f, "Снимок экрана сохранён во внутренней памяти телефона, в папке Pictures/Screenshots");
+        toast(
+            &mut c,
+            &t,
+            &f,
+            "Снимок экрана сохранён во внутренней памяти телефона, в папке Pictures/Screenshots",
+        );
         let two = dark(&c);
-        assert!(two.0 >= t.m.margin && two.2 <= 1200.0 - t.m.margin, "between the screen's margins: {two:?}");
-        assert!(two.3 - two.1 > one.3 - one.1 && two.1 == one.1, "taller, from the same top: {one:?} {two:?}");
+        assert!(
+            two.0 >= t.m.margin && two.2 <= 1200.0 - t.m.margin,
+            "between the screen's margins: {two:?}"
+        );
+        assert!(
+            two.3 - two.1 > one.3 - one.1 && two.1 == one.1,
+            "taller, from the same top: {one:?} {two:?}"
+        );
     }
 
     #[test]
@@ -3450,26 +5225,73 @@ mod tests {
         let locales = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
         crate::canvas::watch_texts();
         for l in Lang::ALL {
-            let file: toml::Table = std::fs::read_to_string(locales.join(format!("{}.toml", l.tag()))).unwrap().parse().unwrap();
-            let enters =
-                [texts::page::DECRYPT, texts::wlan::CONNECT, texts::common::DONE, texts::search::SEARCH, texts::keyboard::ENTER, texts::keyboard::NEW_LINE];
+            let file: toml::Table =
+                std::fs::read_to_string(locales.join(format!("{}.toml", l.tag())))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+            let enters = [
+                texts::page::DECRYPT,
+                texts::wlan::CONNECT,
+                texts::common::DONE,
+                texts::search::SEARCH,
+                texts::keyboard::ENTER,
+                texts::keyboard::NEW_LINE,
+            ];
             for enter in enters {
-                keyboard(&mut c, &t, &f, l, 1000.0, Layer::Letters, None, l.pick(enter));
+                keyboard(
+                    &mut c,
+                    &t,
+                    &f,
+                    l,
+                    1000.0,
+                    Layer::Letters,
+                    None,
+                    l.pick(enter),
+                );
             }
             keypad(&mut c, &t, &f, l, 1000.0, None);
-            let slides: Vec<&str> = file["confirm"].as_table().unwrap().values().map(|text| text.as_str().unwrap()).collect();
+            let slides: Vec<&str> = file["confirm"]
+                .as_table()
+                .unwrap()
+                .values()
+                .map(|text| text.as_str().unwrap())
+                .collect();
             assert!(slides.len() > 10, "the sliders' words of {l:?} are read");
             for label in slides {
                 confirm(&mut c, &t, &f, 400.0, label, false, 0.0);
             }
-            dock_bar(&t, &f, t.pal.bg, &[l.pick(texts::common::CANCEL), l.pick(texts::files::COPY_HERE)]);
-            dock_bar(&t, &f, t.pal.bg, &[l.pick(texts::common::CANCEL), l.pick(texts::files::MOVE_HERE)]);
+            dock_bar(
+                &t,
+                &f,
+                t.pal.bg,
+                &[
+                    l.pick(texts::common::CANCEL),
+                    l.pick(texts::files::COPY_HERE),
+                ],
+            );
+            dock_bar(
+                &t,
+                &f,
+                t.pal.bg,
+                &[
+                    l.pick(texts::common::CANCEL),
+                    l.pick(texts::files::MOVE_HERE),
+                ],
+            );
             button(&mut c, &t, &f, 400.0, l.pick(texts::common::TRY_AGAIN));
             button(&mut c, &t, &f, 400.0, l.pick(texts::logs::EXPORT));
             // At seven tenths of its size a label is still larger than the
             // captions the pages set.
-            let small: Vec<(String, f32)> = crate::canvas::take_watched().smaller.into_iter().filter(|(_, part)| *part < 0.7).collect();
-            assert!(small.is_empty(), "too long for their place in {l:?}: {small:?}");
+            let small: Vec<(String, f32)> = crate::canvas::take_watched()
+                .smaller
+                .into_iter()
+                .filter(|(_, part)| *part < 0.7)
+                .collect();
+            assert!(
+                small.is_empty(),
+                "too long for their place in {l:?}: {small:?}"
+            );
         }
     }
 }

@@ -54,7 +54,11 @@ fn find_kv(haystack: &str, key: &str) -> Option<String> {
         if let Some((k, v)) = line.split_once('=')
             && k.trim() == key
         {
-            let val = v.trim().trim_matches('"').trim_end_matches(',').trim_matches('"');
+            let val = v
+                .trim()
+                .trim_matches('"')
+                .trim_end_matches(',')
+                .trim_matches('"');
             if !val.is_empty() {
                 return Some(val.to_string());
             }
@@ -93,7 +97,11 @@ pub fn size_bytes(path: impl AsRef<Path>) -> Result<u64> {
         .with_context(|| format!("open {}", path.as_ref().display()))?;
     let mut size: u64 = 0;
     let rc = unsafe {
-        libc::ioctl(f.as_raw_fd(), BLKGETSIZE64 as libc::c_int, &mut size as *mut u64)
+        libc::ioctl(
+            f.as_raw_fd(),
+            BLKGETSIZE64 as libc::c_int,
+            &mut size as *mut u64,
+        )
     };
     if rc != 0 {
         return Err(std::io::Error::last_os_error()).context("BLKGETSIZE64");
@@ -112,7 +120,11 @@ pub fn devnum(path: impl AsRef<Path>) -> Result<(u32, u32)> {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     let p = path.as_ref();
     let meta = fs::metadata(p).with_context(|| format!("stat {}", p.display()))?;
-    anyhow::ensure!(meta.file_type().is_block_device(), "{} is not a block device", p.display());
+    anyhow::ensure!(
+        meta.file_type().is_block_device(),
+        "{} is not a block device",
+        p.display()
+    );
     let rdev = meta.rdev() as libc::dev_t;
     Ok((libc::major(rdev) as u32, libc::minor(rdev) as u32))
 }
@@ -133,8 +145,16 @@ pub fn read_only(path: impl AsRef<Path>) -> Result<bool> {
     let p = path.as_ref();
     let f = fs::File::open(p).with_context(|| format!("open {}", p.display()))?;
     let mut marked: libc::c_int = 0;
-    if unsafe { libc::ioctl(f.as_raw_fd(), BLKROGET as libc::c_int, &mut marked as *mut libc::c_int) } != 0 {
-        return Err(std::io::Error::last_os_error()).with_context(|| format!("ask whether {} is read-only", p.display()));
+    if unsafe {
+        libc::ioctl(
+            f.as_raw_fd(),
+            BLKROGET as libc::c_int,
+            &mut marked as *mut libc::c_int,
+        )
+    } != 0
+    {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("ask whether {} is read-only", p.display()));
     }
     Ok(marked != 0)
 }
@@ -153,9 +173,17 @@ pub fn set_read_only(path: impl AsRef<Path>, read_only: bool) -> Result<()> {
     let p = path.as_ref();
     let f = fs::File::open(p).with_context(|| format!("open {}", p.display()))?;
     let mark = libc::c_int::from(read_only);
-    if unsafe { libc::ioctl(f.as_raw_fd(), BLKROSET as libc::c_int, &mark as *const libc::c_int) } != 0 {
+    if unsafe {
+        libc::ioctl(
+            f.as_raw_fd(),
+            BLKROSET as libc::c_int,
+            &mark as *const libc::c_int,
+        )
+    } != 0
+    {
         let what = if read_only { "mark" } else { "no longer mark" };
-        return Err(std::io::Error::last_os_error()).with_context(|| format!("{what} {} read-only", p.display()));
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("{what} {} read-only", p.display()));
     }
     Ok(())
 }
@@ -190,13 +218,19 @@ mod tests {
     #[test]
     fn parses_slot_from_cmdline() {
         let line = "console=ttyMSM0 androidboot.slot_suffix=_b androidboot.hardware=qcom";
-        assert_eq!(find_kv(line, "androidboot.slot_suffix").as_deref(), Some("_b"));
+        assert_eq!(
+            find_kv(line, "androidboot.slot_suffix").as_deref(),
+            Some("_b")
+        );
     }
 
     #[test]
     fn parses_slot_from_bootconfig() {
         let line = "androidboot.slot_suffix = \"_a\"\nandroidboot.force_normal_boot = \"1\"";
-        assert_eq!(find_kv(line, "androidboot.slot_suffix").as_deref(), Some("_a"));
+        assert_eq!(
+            find_kv(line, "androidboot.slot_suffix").as_deref(),
+            Some("_a")
+        );
     }
 
     #[cfg(target_os = "android")]
@@ -204,19 +238,36 @@ mod tests {
     fn on_the_phone_a_device_marked_read_only_takes_no_writing_until_the_mark_is_off() {
         use std::io::Write;
         let losetup = |args: &[&str]| {
-            let out = std::process::Command::new("/system/bin/losetup").args(args).output().unwrap();
-            assert!(out.status.success(), "losetup {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+            let out = std::process::Command::new("/system/bin/losetup")
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "losetup {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
             String::from_utf8(out.stdout).unwrap().trim().to_string()
         };
-        let image = std::env::temp_dir().join(format!("skyward-read-only-{}.img", std::process::id()));
+        let image =
+            std::env::temp_dir().join(format!("skyward-read-only-{}.img", std::process::id()));
         fs::File::create(&image).unwrap().set_len(1 << 20).unwrap();
         let device = PathBuf::from(losetup(&["-f", "--show", image.to_str().unwrap()]));
-        let write = || fs::OpenOptions::new().write(true).open(&device).and_then(|mut f| f.write_all(&[0x5a; 4096]));
+        let write = || {
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&device)
+                .and_then(|mut f| f.write_all(&[0x5a; 4096]))
+        };
         assert!(!read_only(&device).unwrap());
         write().unwrap();
         set_read_only(&device, true).unwrap();
         assert!(read_only(&device).unwrap());
-        assert_eq!(write().unwrap_err().raw_os_error(), Some(libc::EPERM), "it opens, and is not written");
+        assert_eq!(
+            write().unwrap_err().raw_os_error(),
+            Some(libc::EPERM),
+            "it opens, and is not written"
+        );
         set_read_only(&device, false).unwrap();
         assert!(!read_only(&device).unwrap());
         write().unwrap();

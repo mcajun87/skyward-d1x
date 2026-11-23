@@ -4,18 +4,20 @@
 
 use crate::codes::{op, response};
 use crate::dataset::Command;
-use crate::responder::{Device, Incoming, Outgoing, Received, Reply, Responder, Storage, DATASET_MAX};
+use crate::responder::{
+    DATASET_MAX, Device, Incoming, Outgoing, Received, Reply, Responder, Storage,
+};
 use crate::usb::{Halt, Next, Port};
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, ensure};
 use jiff::tz::TimeZone;
 use skyward_sys::kmsg;
 use skyward_sys::worker::{self, Teller, Told};
 use std::collections::VecDeque;
 use std::io;
 use std::os::unix::fs::FileExt;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -55,7 +57,9 @@ impl Mailbox {
     /// Whether what came ends a transfer under way: the storage changes, or
     /// the service stops.
     fn urgent(&self) -> bool {
-        self.pending.iter().any(|m| matches!(m, Message::Offer(..) | Message::Stop))
+        self.pending
+            .iter()
+            .any(|m| matches!(m, Message::Offer(..) | Message::Stop))
     }
 }
 
@@ -75,7 +79,11 @@ impl Service {
         let port = Port::open(asked.fd())?;
         let stop = Arc::new(AtomicBool::new(false));
         let responder = Responder::new(device, zone, stop.clone());
-        let mail = Mailbox { asked, pending: VecDeque::new(), stop: stop.clone() };
+        let mail = Mailbox {
+            asked,
+            pending: VecDeque::new(),
+            stop: stop.clone(),
+        };
         skyward_sys::set_prop(READY, "1")?;
         let thread = thread::Builder::new()
             .name("mtp".into())
@@ -97,7 +105,11 @@ impl Service {
                 served
             })
             .context("start the MTP thread")?;
-        Ok(Service { messages, stop, thread: Some(thread) })
+        Ok(Service {
+            messages,
+            stop,
+            thread: Some(thread),
+        })
     }
 
     /// Whether the thread still serves; one that failed says why once
@@ -118,7 +130,9 @@ impl Service {
         let (done, given) = mpsc::channel();
         self.stop.store(true, Ordering::Relaxed);
         self.send(Message::Offer(storage, done))?;
-        given.recv_timeout(GIVE_BACK).map_err(|_| anyhow!("the MTP thread has not let go of the storage"))
+        given
+            .recv_timeout(GIVE_BACK)
+            .map_err(|_| anyhow!("the MTP thread has not let go of the storage"))
     }
 
     /// The zone the times of files are told in.
@@ -133,7 +147,9 @@ impl Service {
     }
 
     fn end(&mut self) -> Result<()> {
-        let Some(thread) = self.thread.take() else { return Ok(()) };
+        let Some(thread) = self.thread.take() else {
+            return Ok(());
+        };
         self.stop.store(true, Ordering::Relaxed);
         // A thread that has ended already says why when joined.
         let _ = self.send(Message::Stop);
@@ -181,7 +197,12 @@ fn serve(port: &mut Port, mut r: Responder, mut mail: Mailbox) -> Result<()> {
 }
 
 /// Do what the phone asked; whether it asked the thread to stop.
-fn attend(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, transaction: u32) -> Result<bool> {
+fn attend(
+    port: &mut Port,
+    r: &mut Responder,
+    mail: &mut Mailbox,
+    transaction: u32,
+) -> Result<bool> {
     while let Some(message) = mail.pending.pop_front() {
         match message {
             Message::Offer(storage, done) => {
@@ -228,20 +249,29 @@ fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<End
                 continue;
             }
             Err(Halt::Failed(e)) => return Err(e).context("read a command"),
-            Err(halt @ (Halt::Cancelled | Halt::Stopped)) => unreachable!("waiting for a command is no transaction to end: {halt:?}"),
+            Err(halt @ (Halt::Cancelled | Halt::Stopped)) => {
+                unreachable!("waiting for a command is no transaction to end: {halt:?}")
+            }
         };
         let Some(cmd) = Command::read(&bytes) else {
-            kmsg(&format!("mtp: {} bytes came that are no command", bytes.len()))?;
+            kmsg(&format!(
+                "mtp: {} bytes came that are no command",
+                bytes.len()
+            ))?;
             continue;
         };
         transaction = cmd.transaction;
         match answer(port, r, mail, &cmd) {
             Ok(()) => {}
-            Err(Halt::Cancelled) => kmsg(&format!("mtp: the computer cancelled {:#06x}", cmd.code))?,
+            Err(Halt::Cancelled) => {
+                kmsg(&format!("mtp: the computer cancelled {:#06x}", cmd.code))?
+            }
             Err(Halt::Stopped) => kmsg(&format!("mtp: {:#06x} stopped for the storage", cmd.code))?,
             Err(Halt::Aborted(e)) => kmsg(&format!("mtp: {:#06x} given up: {e}", cmd.code))?,
             Err(Halt::Disconnected) => return Ok(Ended::Disconnected),
-            Err(Halt::Failed(e)) => return Err(e).with_context(|| format!("answer {:#06x}", cmd.code)),
+            Err(Halt::Failed(e)) => {
+                return Err(e).with_context(|| format!("answer {:#06x}", cmd.code));
+            }
         }
         mail.collect();
         if attend(port, r, mail, transaction)? {
@@ -252,7 +282,12 @@ fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<End
 
 /// One transaction: the data that comes with the command, the answer and
 /// its data, and the response.
-fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command) -> Result<(), Halt> {
+fn answer(
+    port: &mut Port,
+    r: &mut Responder,
+    mail: &mut Mailbox,
+    cmd: &Command,
+) -> Result<(), Halt> {
     let mut stop = || {
         mail.collect();
         mail.urgent()
@@ -263,7 +298,10 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
             let mut data = Vec::new();
             let (_, _, failed) = port.receive(&mut stop, false, &mut |piece| {
                 if data.len() + piece.len() > DATASET_MAX {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "the dataset is longer than any the phone takes"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "the dataset is longer than any the phone takes",
+                    ));
                 }
                 data.extend_from_slice(piece);
                 Ok(())
@@ -273,7 +311,11 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
                 None => r.answer(cmd, Some(&data)),
             }
         }
-        Incoming::File { file, offset, unbounded } => {
+        Incoming::File {
+            file,
+            offset,
+            unbounded,
+        } => {
             let mut at = offset;
             let came = port.receive(&mut stop, unbounded, &mut |piece| {
                 file.write_all_at(piece, at)?;
@@ -300,14 +342,25 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
         }
     };
     if let Some(why) = &reply.why {
-        kmsg(&format!("mtp: {:#06x} answered {:#06x}: {why}", cmd.code, reply.code)).map_err(|e| Halt::Failed(io::Error::other(e)))?;
+        kmsg(&format!(
+            "mtp: {:#06x} answered {:#06x}: {why}",
+            cmd.code, reply.code
+        ))
+        .map_err(|e| Halt::Failed(io::Error::other(e)))?;
     }
     if cmd.code == op::OPEN_SESSION && reply.code == response::OK {
-        kmsg("mtp: the computer opened a session").map_err(|e| Halt::Failed(io::Error::other(e)))?;
+        kmsg("mtp: the computer opened a session")
+            .map_err(|e| Halt::Failed(io::Error::other(e)))?;
     }
     match reply.data {
-        Some(Outgoing::Dataset(bytes)) => port.send_data(cmd.code, cmd.transaction, &bytes, &mut stop)?,
-        Some(Outgoing::File { file, offset, length }) => port.send_file(cmd.code, cmd.transaction, &file, offset, length, &mut stop)?,
+        Some(Outgoing::Dataset(bytes)) => {
+            port.send_data(cmd.code, cmd.transaction, &bytes, &mut stop)?
+        }
+        Some(Outgoing::File {
+            file,
+            offset,
+            length,
+        }) => port.send_file(cmd.code, cmd.transaction, &file, offset, length, &mut stop)?,
         None => {}
     }
     port.send_response(reply.code, cmd.transaction, &reply.params, &mut stop)

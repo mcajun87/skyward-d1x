@@ -9,11 +9,14 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+aes-gcm = "0.10.3"
 hex = { workspace = true }
 libc = { workspace = true }
 lz4_flex = "0.14.0"
+md-5 = "0.10.6"
 serde = { workspace = true }
 sha2 = "0.10.9"
 skyward-files = { path = "../skyward-files" }
 tar = "0.4.46"
 toml = { workspace = true }
+scrypt = { version = "0.11.0", default-features = false }

@@ -13,7 +13,9 @@ impl App {
     /// A page come to rest with its search bar part folded eases on from
     /// there to fold the bar away or unfold it whole, whichever is nearer.
     pub(super) fn settle_fold(&mut self, now: u64) {
-        let Some(fr) = self.frame.as_ref() else { return };
+        let Some(fr) = self.frame.as_ref() else {
+            return;
+        };
         let at = self.top().1;
         let rest = fr.settle(at).min(self.max_scroll());
         if rest != at {
@@ -26,14 +28,17 @@ impl App {
     pub(super) fn seek_to(&mut self, target: f32, now: u64) {
         let at = self.top().1;
         self.fling = None;
-        self.seek = (target != at).then(|| (target, Spring::new(now, at - target, 0.0, SEEK_PERIOD)));
+        self.seek =
+            (target != at).then(|| (target, Spring::new(now, at - target, 0.0, SEEK_PERIOD)));
         self.dirty = true;
     }
 
     /// Whether the page is gliding, springing back, or easing on of its own
     /// accord at `now`.
     pub(super) fn in_motion(&self, now: u64) -> bool {
-        self.fling.is_some_and(|fl| !fl.at(now).1) || self.bounce.is_some_and(|b| !b.at(now).1) || self.seek.is_some_and(|(_, s)| !s.at(now).1)
+        self.fling.is_some_and(|fl| !fl.at(now).1)
+            || self.bounce.is_some_and(|b| !b.at(now).1)
+            || self.seek.is_some_and(|(_, s)| !s.at(now).1)
     }
 
     /// Stop a page gliding, springing back or easing on of its own accord,
@@ -42,7 +47,11 @@ impl App {
     pub(super) fn catch(&mut self, now: u64) -> bool {
         let glide = self.fling.take().is_some_and(|fl| !fl.at(now).1);
         let seeking = self.seek.take().is_some_and(|(_, s)| !s.at(now).1);
-        let spring = self.bounce.take().map(|b| b.at(now)).filter(|&(_, done)| !done);
+        let spring = self
+            .bounce
+            .take()
+            .map(|b| b.at(now))
+            .filter(|&(_, done)| !done);
         if let Some((offset, _)) = spring {
             self.pull = motion::unrubber(offset, self.h as f32);
         }
@@ -85,14 +94,36 @@ mod tests {
         let plain = info();
         let mut app = App::new(Screen::Home, W, SNUG, PPD);
         let fr = app.frame(&f, &plain);
-        let reboot = fr.hits.iter().find(|h| h.action == Action::Open(Screen::Reboot)).expect("a reboot row").rect;
-        assert!(reboot.y + reboot.h <= SNUG as f32, "without the notice the rows fit the screen");
-        let i = DeviceInfo { snapshot: SnapshotState::Snapshotted, ..info() };
+        let reboot = fr
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Open(Screen::Reboot))
+            .expect("a reboot row")
+            .rect;
+        assert!(
+            reboot.y + reboot.h > SNUG as f32,
+            "the home page's rows run past the screen even without the notice"
+        );
+        let i = DeviceInfo {
+            snapshot: SnapshotState::Snapshotted,
+            ..info()
+        };
         let mut app = App::new(Screen::Home, W, SNUG, PPD);
         let fr = app.frame(&f, &i);
-        let reboot = fr.hits.iter().find(|h| h.action == Action::Open(Screen::Reboot)).expect("a reboot row").rect;
-        assert!(reboot.y + reboot.h > SNUG as f32, "the notice pushes the last row below the screen");
-        assert!(reboot.y + reboot.h <= fr.canvas.h as f32, "the page is drawn down to it");
+        let reboot = fr
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Open(Screen::Reboot))
+            .expect("a reboot row")
+            .rect;
+        assert!(
+            reboot.y + reboot.h > SNUG as f32,
+            "the notice pushes the last row below the screen"
+        );
+        assert!(
+            reboot.y + reboot.h <= fr.canvas.h as f32,
+            "the page is drawn down to it"
+        );
         app.touch(Touch::Down(700.0, 2800.0), &f, 0);
         app.touch(Touch::Move(700.0, 2000.0), &f, 0);
         app.touch(Touch::Move(700.0, 1200.0), &f, 0);
@@ -116,42 +147,77 @@ mod tests {
         let t = Theme::light(W, SHORT, PPD);
         let m = t.m;
         let mut app = App::new(Screen::Home, W, SHORT, PPD);
-        let fold = app.frame(&f, &i).fold.expect("the home page's search bar folds");
-        assert!((fold.span - (m.search_h + m.after_search)).abs() < 1e-3, "the bar and the gap under it");
+        let fold = app
+            .frame(&f, &i)
+            .fold
+            .expect("the home page's search bar folds");
+        assert!(
+            (fold.span - (m.search_h + m.after_search)).abs() < 1e-3,
+            "the bar and the gap under it"
+        );
         let mut screen = Canvas::new(W, SHORT);
         // Down a column through the bar clear of its words: the rows in the
         // bar's grey, and the first row of the device card's white.
         let x = m.dp(300.0) as u32;
         let px = |screen: &Canvas, y: u32| screen.data[((y * W + x) * 4) as usize];
-        let bar = |screen: &Canvas| (0..SHORT).filter(|&y| px(screen, y) == t.pal.search.r).collect::<Vec<_>>();
-        let card = |screen: &Canvas| (fold.bar.y as u32..SHORT).find(|&y| px(screen, y) == t.pal.card.r).expect("the card shows");
+        let bar = |screen: &Canvas| {
+            (0..SHORT)
+                .filter(|&y| px(screen, y) == t.pal.search.r)
+                .collect::<Vec<_>>()
+        };
+        let card = |screen: &Canvas| {
+            (fold.bar.y as u32..SHORT)
+                .find(|&y| px(screen, y) == t.pal.card.r)
+                .expect("the card shows")
+        };
         // The large title's band.
         let (top, bottom) = ((m.title_top - m.dp(14.0)) as u32, fold.bar.y as u32);
         let title = |screen: &Canvas| screen.crop(0, top, W, bottom - top).data.clone();
 
         app.compose(&mut screen, &f, &i, "12:00", 0);
         let (whole, still, first) = (bar(&screen), title(&screen), card(&screen));
-        assert_eq!((whole[0], *whole.last().expect("the bar shows")), (fold.bar.y.ceil() as u32, (fold.bar.y + fold.bar.h).floor() as u32 - 1));
+        assert_eq!(
+            (whole[0], *whole.last().expect("the bar shows")),
+            (
+                fold.bar.y.ceil() as u32,
+                (fold.bar.y + fold.bar.h).floor() as u32 - 1
+            )
+        );
 
         let half = (fold.bar.h / 2.0).round();
         scroll_to(&mut app, &f, half, 1000);
         app.compose(&mut screen, &f, &i, "12:00", 1800);
         let rows = bar(&screen);
         assert_eq!(rows[0], whole[0], "its top stays");
-        assert_eq!(*rows.last().expect("half the bar shows"), (fold.bar.y + fold.bar.h - half).floor() as u32 - 1, "its foot rises with the page");
-        assert_eq!(card(&screen), first - half as u32, "the content follows the finger");
+        assert_eq!(
+            *rows.last().expect("half the bar shows"),
+            (fold.bar.y + fold.bar.h - half).floor() as u32 - 1,
+            "its foot rises with the page"
+        );
+        assert_eq!(
+            card(&screen),
+            first - half as u32,
+            "the content follows the finger"
+        );
         assert!(title(&screen) == still, "the title holds still");
 
         scroll_to(&mut app, &f, fold.span, 3000);
         app.compose(&mut screen, &f, &i, "12:00", 3800);
         assert!(bar(&screen).is_empty(), "folded away");
-        assert_eq!(card(&screen), first - fold.span.round() as u32, "the gap under it closed");
+        assert_eq!(
+            card(&screen),
+            first - fold.span.round() as u32,
+            "the gap under it closed"
+        );
         assert!(title(&screen) == still, "the title holds still till then");
 
         scroll_to(&mut app, &f, fold.span + m.dp(10.0), 5000);
         app.compose(&mut screen, &f, &i, "12:00", 5800);
         assert!(title(&screen) != still, "then it goes up with the page");
-        assert!(!app.title.on, "the bar's title waits for the large one to fade");
+        assert!(
+            !app.title.on,
+            "the bar's title waits for the large one to fade"
+        );
         scroll_to(&mut app, &f, fold.span + m.dp(TITLE_FADE_DP) + 2.0, 7000);
         assert!(app.title.on);
     }
@@ -160,7 +226,11 @@ mod tests {
     fn a_home_page_let_go_with_its_search_bar_part_folded_folds_it_whole_or_not_at_all() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, SHORT, PPD);
-        let span = app.frame(&f, &i).fold.expect("the home page's search bar folds").span;
+        let span = app
+            .frame(&f, &i)
+            .fold
+            .expect("the home page's search bar folds")
+            .span;
         let settle = |app: &mut App, from: u64| {
             for ms in (from..from + 2000).step_by(8) {
                 app.tick(ms);
@@ -172,7 +242,11 @@ mod tests {
         scroll_to(&mut app, &f, span * (FOLD_SETTLE + 0.1), 3000);
         assert_eq!(settle(&mut app, 3800), span, "past it it folds away");
         scroll_to(&mut app, &f, span + 50.0, 6000);
-        assert_eq!(settle(&mut app, 6800), span + 50.0, "a page scrolled past the fold stays");
+        assert_eq!(
+            settle(&mut app, 6800),
+            span + 50.0,
+            "a page scrolled past the fold stays"
+        );
 
         // A light flick down, a thousand pixels a second, let go past the
         // fold, that glides to rest with the bar part folded.
@@ -184,31 +258,54 @@ mod tests {
         app.touch(Touch::Up, &f, 9056);
         let glide = app.fling.expect("it glides");
         let (rest, _) = glide.at(u64::MAX);
-        assert!(rest > 0.0 && rest < span, "this one comes to rest in the fold: {rest}");
+        assert!(
+            rest > 0.0 && rest < span,
+            "this one comes to rest in the fold: {rest}"
+        );
         let folded = if rest < span * FOLD_SETTLE { 0.0 } else { span };
-        assert_eq!(settle(&mut app, 9056), folded, "it settles there the same way");
+        assert_eq!(
+            settle(&mut app, 9056),
+            folded,
+            "it settles there the same way"
+        );
 
         // Let go in the fold while still moving, too slowly to glide out of
         // it: the bar settles at once from where it was let go.
         scroll_to(&mut app, &f, 0.0, 12_000);
         app.touch(Touch::Down(10.0, 1000.0), &f, 13_000);
         for k in 1..=5u64 {
-            app.touch(Touch::Move(10.0, 1000.0 - 30.0 * k as f32), &f, 13_000 + 8 * k);
+            app.touch(
+                Touch::Move(10.0, 1000.0 - 30.0 * k as f32),
+                &f,
+                13_000 + 8 * k,
+            );
         }
         for k in 1..=14u64 {
-            app.touch(Touch::Move(10.0, 850.0 + 2.0 * k as f32), &f, 13_040 + 8 * k);
+            app.touch(
+                Touch::Move(10.0, 850.0 + 2.0 * k as f32),
+                &f,
+                13_040 + 8 * k,
+            );
         }
         app.touch(Touch::Up, &f, 13_152);
         assert_eq!(app.top().1, 122.0);
         assert!(app.fling.is_none(), "no glide");
-        assert_eq!(app.seek.map(|(rest, _)| rest), Some(span), "it was let go past the mark");
+        assert_eq!(
+            app.seek.map(|(rest, _)| rest),
+            Some(span),
+            "it was let go past the mark"
+        );
         assert_eq!(settle(&mut app, 13_152), span);
 
         // A flick that carries the page out of the fold glides on.
         scroll_to(&mut app, &f, 0.0, 16_000);
         app.touch(Touch::Down(10.0, 1000.0), &f, 17_000);
         for k in 1..=4u64 {
-            app.touch(Touch::Move(10.0, 1000.0 - 30.0 * k as f32), &f, 17_000 + 8 * k);
+            app.touch(
+                Touch::Move(10.0, 1000.0 - 30.0 * k as f32),
+                &f,
+                17_000 + 8 * k,
+            );
         }
         app.touch(Touch::Up, &f, 17_032);
         let (end, _) = app.fling.expect("it glides").at(u64::MAX);
@@ -219,7 +316,10 @@ mod tests {
     fn a_search_bar_folded_away_answers_no_touch() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
-        let fold = app.frame(&f, &i).fold.expect("the home page's search bar folds");
+        let fold = app
+            .frame(&f, &i)
+            .fold
+            .expect("the home page's search bar folds");
         scroll_to(&mut app, &f, fold.span, 0);
         app.tick(3000);
         // Where the page carried the bar's middle had the bar scrolled with
@@ -239,7 +339,10 @@ mod tests {
         app.touch(Touch::Move(700.0, 1300.0), &f, 100);
         app.touch(Touch::Move(700.0, 1800.0), &f, 600);
         let shown = app.overscroll(600);
-        assert!(shown < 0.0 && shown > -700.0, "the page follows less than the finger: {shown}");
+        assert!(
+            shown < 0.0 && shown > -700.0,
+            "the page follows less than the finger: {shown}"
+        );
         assert_eq!(app.top().1, 0.0);
         // Dragging back first undoes the pull.
         app.touch(Touch::Move(700.0, 1400.0), &f, 1000);
@@ -248,7 +351,10 @@ mod tests {
         assert!(app.overscroll(1400) < 0.0);
         assert_eq!(app.deadline(1400), Some(0));
         app.tick(1500);
-        assert!(app.overscroll(1500) > app.overscroll(1400), "on its way back");
+        assert!(
+            app.overscroll(1500) > app.overscroll(1400),
+            "on its way back"
+        );
         app.tick(3000);
         assert_eq!(app.overscroll(3000), 0.0);
         assert_eq!(app.deadline(3000), app.idle_due());
@@ -265,7 +371,10 @@ mod tests {
         let held = app.overscroll(1050);
         app.touch(Touch::Down(700.0, 1200.0), &f, 1050);
         app.tick(1500);
-        assert!((app.overscroll(1500) - held).abs() < 1.0, "the finger holds it where it was");
+        assert!(
+            (app.overscroll(1500) - held).abs() < 1.0,
+            "the finger holds it where it was"
+        );
         app.touch(Touch::Up, &f, 1600);
         app.tick(4000);
         assert_eq!(app.overscroll(4000), 0.0);
@@ -281,7 +390,10 @@ mod tests {
         assert_eq!(app.top().1, 300.0);
         app.touch(Touch::Move(700.0, 2100.0), &f, 500);
         assert_eq!(app.top().1, 0.0);
-        assert!(app.overscroll(500) < 0.0, "the last 100 px pull the page down");
+        assert!(
+            app.overscroll(500) < 0.0,
+            "the last 100 px pull the page down"
+        );
     }
 
     #[test]
@@ -309,6 +421,7 @@ mod tests {
             health: Some("Good".into()),
             cycles: Some(169),
             design: Some(5_500_000),
+            rated: None,
             full: Some(5_095_000),
             voltage: Some(4_200_000),
             quick: false,
@@ -325,13 +438,21 @@ mod tests {
         let lift = flick(&mut app, &f, 1000, 20.0);
         let lifted = app.top().1;
         assert_eq!(lifted, 100.0);
-        assert_eq!(app.deadline(lift), Some(0), "the page moves on after the lift");
+        assert_eq!(
+            app.deadline(lift),
+            Some(0),
+            "the page moves on after the lift"
+        );
         app.tick(lift + 50);
         assert!(app.top().1 > lifted);
         for ms in (100..5000).step_by(8) {
             app.tick(lift + ms);
         }
-        assert_eq!(app.deadline(lift + 5000), app.idle_due(), "the glide comes to rest");
+        assert_eq!(
+            app.deadline(lift + 5000),
+            app.idle_due(),
+            "the glide comes to rest"
+        );
         let rest = app.top().1;
         assert!(rest > lifted + 300.0 && rest < app.max_scroll(), "{rest}");
     }
@@ -342,7 +463,12 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.backup_started(false, Place::Storage, true);
         app.backup_plan((0..20).map(|k| (format!("part{k}"), 1_000_000)).collect());
-        let at = |done| BackupAt { item: 0, done, of: 1_000_000, checking: false };
+        let at = |done| BackupAt {
+            item: 0,
+            done,
+            of: 1_000_000,
+            checking: false,
+        };
         app.backup_at(at(0));
         app.frame(&f, &i);
         // A finger drags the page up while the work tells how far it has
@@ -355,13 +481,24 @@ mod tests {
         assert!(dragged > 0.0);
         app.backup_at(at(500_000));
         app.touch(Touch::Move(700.0, 1400.0), &f, 40);
-        assert_eq!((app.top().1, app.pull), (dragged + 200.0, 0.0), "the page goes on from where it was");
+        assert_eq!(
+            (app.top().1, app.pull),
+            (dragged + 200.0, 0.0),
+            "the page goes on from where it was"
+        );
         app.touch(Touch::Up, &f, 48);
         let lifted = app.top().1;
         app.backup_at(at(600_000));
         app.tick(98);
-        assert!(app.top().1 > lifted, "a glide goes on through the page being drawn again");
-        assert_eq!(app.overscroll(98), 0.0, "and does not spring back from the top");
+        assert!(
+            app.top().1 > lifted,
+            "a glide goes on through the page being drawn again"
+        );
+        assert_eq!(
+            app.overscroll(98),
+            0.0,
+            "and does not spring back from the top"
+        );
     }
 
     #[test]
@@ -376,7 +513,10 @@ mod tests {
             furthest = furthest.max(app.overscroll(lift + ms));
         }
         assert_eq!(app.top().1, app.max_scroll());
-        assert!(furthest > app.theme().m.dp(8.0), "it ran on past the end: {furthest}");
+        assert!(
+            furthest > app.theme().m.dp(8.0),
+            "it ran on past the end: {furthest}"
+        );
         assert_eq!(app.overscroll(lift + 2000), 0.0);
         assert_eq!(app.deadline(lift + 2000), app.idle_due());
     }
@@ -439,12 +579,19 @@ mod tests {
         app.tick(lift + 30);
         app.touch(Touch::Down(10.0, 1600.0), &f, lift + 40);
         app.tick(lift + 48);
-        assert!(app.fling.is_some(), "landing at the edge leaves the glide going");
+        assert!(
+            app.fling.is_some(),
+            "landing at the edge leaves the glide going"
+        );
         app.touch(Touch::Move(12.0, 1500.0), &f, lift + 56);
         assert!(app.fling.is_none(), "dragging the page catches it");
         let held = app.top().1;
         app.touch(Touch::Move(12.0, 1450.0), &f, lift + 64);
-        assert_eq!(app.top().1, held + 50.0, "and it follows the finger from there");
+        assert_eq!(
+            app.top().1,
+            held + 50.0,
+            "and it follows the finger from there"
+        );
     }
 
     #[test]
@@ -470,7 +617,10 @@ mod tests {
         scroll_to(&mut app, &f, m.dp(TITLE_FADE_DP) + 2.0, 1000);
         assert!(app.title.on, "the large title is gone");
         assert!(!app.bar.on, "the content is not under the bar yet");
-        assert!(app.title.level(1900) < 1.0 && app.title.level(1900) > 0.0, "it eases in");
+        assert!(
+            app.title.level(1900) < 1.0 && app.title.level(1900) > 0.0,
+            "it eases in"
+        );
         assert_eq!(app.title.level(3000), 1.0);
         let under = content_top - widgets::bar_bottom(&app.theme()) - m.dp(20.0);
         scroll_to(&mut app, &f, under + 10.0, 4000);
@@ -491,7 +641,10 @@ mod tests {
         assert!(!app.title.on && !app.bar.on);
         scroll_to(&mut app, &f, gone + 4.0, 1000);
         assert!(app.title.on && app.bar.on);
-        assert!((app.bar.level(1800 + 75) - 0.5).abs() < 0.01, "a straight 150 ms fade");
+        assert!(
+            (app.bar.level(1800 + 75) - 0.5).abs() < 0.01,
+            "a straight 150 ms fade"
+        );
     }
 
     #[test]
@@ -503,7 +656,11 @@ mod tests {
         let end = app.max_scroll();
         scroll_to(&mut app, &f, end, 0);
         app.tick(2000);
-        assert_eq!((app.title.level(2000), app.bar.level(2000)), (1.0, 1.0), "scrolled down, the bar is up");
+        assert_eq!(
+            (app.title.level(2000), app.bar.level(2000)),
+            (1.0, 1.0),
+            "scrolled down, the bar is up"
+        );
         tap_at(&mut app, &f, &i, Action::Open(Screen::Language), 3000);
         assert_eq!(app.screen(), Screen::Language);
         tap_back(&mut app, &f, &i, 4000);
@@ -512,6 +669,10 @@ mod tests {
         app.tick(4008);
         app.compose(&mut c, &f, &i, "12:00", 4008);
         assert_eq!(app.top().1, end, "the page is where it was left");
-        assert_eq!((app.title.level(4008), app.bar.level(4008)), (1.0, 1.0), "its bar is up from the first frame");
+        assert_eq!(
+            (app.title.level(4008), app.bar.level(4008)),
+            (1.0, 1.0),
+            "its bar is up from the first frame"
+        );
     }
 }

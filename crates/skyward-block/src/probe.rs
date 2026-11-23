@@ -43,13 +43,23 @@ mod tests {
 
     #[test]
     fn the_filesystem_is_read_off_the_line_blkid_prints() {
-        assert_eq!(named("/dev/block/dm-8: TYPE=\"f2fs\"\n").as_deref(), Some("f2fs"));
-        assert_eq!(named("/dev/block/dm-9: LABEL=\"metadata\" UUID=\"2d0f\" TYPE=\"ext4\"").as_deref(), Some("ext4"));
+        assert_eq!(
+            named("/dev/block/dm-8: TYPE=\"f2fs\"\n").as_deref(),
+            Some("f2fs")
+        );
+        assert_eq!(
+            named("/dev/block/dm-9: LABEL=\"metadata\" UUID=\"2d0f\" TYPE=\"ext4\"").as_deref(),
+            Some("ext4")
+        );
     }
 
     #[test]
     fn a_partition_blkid_makes_nothing_of_holds_no_filesystem_it_knows() {
         assert_eq!(named(""), None, "a partition it says nothing about");
-        assert_eq!(named("/dev/block/dm-8: PTTYPE=\"dos\""), None, "a partition table is not a filesystem");
+        assert_eq!(
+            named("/dev/block/dm-8: PTTYPE=\"dos\""),
+            None,
+            "a partition table is not a filesystem"
+        );
     }
 }

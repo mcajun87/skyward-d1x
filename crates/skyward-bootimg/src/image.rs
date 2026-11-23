@@ -1,5 +1,5 @@
-use abootimg_oxide::{binrw::io::Cursor, Header, HeaderV3};
-use anyhow::{anyhow, bail, Context, Result};
+use abootimg_oxide::{Header, HeaderV3, binrw::io::Cursor};
+use anyhow::{Context, Result, anyhow, bail};
 use std::fs;
 use std::path::Path;
 
@@ -15,7 +15,10 @@ pub struct BootImage {
 
 fn section(bytes: &[u8], at: usize, len: u32, what: &str) -> Result<Vec<u8>> {
     let end = at + len as usize;
-    bytes.get(at..end).map(<[u8]>::to_vec).ok_or_else(|| anyhow!("{what} runs past the end of the image"))
+    bytes
+        .get(at..end)
+        .map(<[u8]>::to_vec)
+        .ok_or_else(|| anyhow!("{what} runs past the end of the image"))
 }
 
 impl BootImage {
@@ -29,11 +32,28 @@ impl BootImage {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = match Header::parse(&mut Cursor::new(bytes)).context("header")? {
             Header::V3(h) => h,
-            Header::V0(h) => bail!("header version {} predates the ramdisk-only layout", h.header_version()),
+            Header::V0(h) => bail!(
+                "header version {} predates the ramdisk-only layout",
+                h.header_version()
+            ),
         };
-        let kernel = section(bytes, HeaderV3::kernel_position(), header.kernel_size, "kernel")?;
-        let ramdisk = section(bytes, header.ramdisk_position(), header.ramdisk_size, "ramdisk")?;
-        Ok(BootImage { header, kernel, ramdisk })
+        let kernel = section(
+            bytes,
+            HeaderV3::kernel_position(),
+            header.kernel_size,
+            "kernel",
+        )?;
+        let ramdisk = section(
+            bytes,
+            header.ramdisk_position(),
+            header.ramdisk_size,
+            "ramdisk",
+        )?;
+        Ok(BootImage {
+            header,
+            kernel,
+            ramdisk,
+        })
     }
 
     /// The image with sizes taken from its parts. A version 4 header keeps its

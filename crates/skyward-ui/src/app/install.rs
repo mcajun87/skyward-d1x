@@ -6,6 +6,14 @@ use super::*;
 /// What an install is told while the last one has not ended.
 pub const INSTALL_UNFINISHED: Text = texts::toast::INSTALL_UNFINISHED;
 
+/// One ZIP waiting in the install queue, as OrangeFox/TWRP keeps them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueueEntry {
+    pub place: Place,
+    pub path: String,
+    pub size: u64,
+}
+
 /// Where the package being installed comes from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Source {
@@ -78,28 +86,50 @@ pub enum Install {
     Waiting,
     /// The package of `size` bytes is looked at; a zip's signature is
     /// checked, once the installer tells how far.
-    Checking { size: u64, stage: Option<Stage> },
+    Checking {
+        size: u64,
+        stage: Option<Stage>,
+    },
     /// An image waits to be told where it goes.
     Choosing(Choice),
     /// An update waits for the user to agree: the version it brings, and
     /// whether all user data is erased after it.
-    Confirming { version: Option<String>, wipe: bool },
+    Confirming {
+        version: Option<String>,
+        wipe: bool,
+    },
     /// `overwriting` says whether the update writes over the running
     /// system.
-    Updating { version: Option<String>, stage: Option<Stage>, overwriting: bool },
-    Flashing { partition: String, stage: Option<Stage> },
+    Updating {
+        version: Option<String>,
+        stage: Option<Stage>,
+        overwriting: bool,
+    },
+    Flashing {
+        partition: String,
+        stage: Option<Stage>,
+    },
     /// A zip with an install script waits for the user to agree to run it.
     ConfirmingScript,
     /// A system to install beside the installed one waits for the room its
     /// root takes to be chosen.
     SystemChoosing(SystemChoice),
     /// The system is being installed: its name, and how far.
-    Systeming { name: String, stage: Option<Stage> },
+    Systeming {
+        name: String,
+        stage: Option<Stage>,
+    },
     /// Its install script is made ready and then, once `running`, runs; how
     /// far it says it is, once it says.
-    Scripting { stage: Option<Stage>, running: bool },
+    Scripting {
+        stage: Option<Stage>,
+        running: bool,
+    },
     /// `damage` is what a failure may have left broken.
-    Finished { outcome: Outcome, damage: Option<Damage> },
+    Finished {
+        outcome: Outcome,
+        damage: Option<Damage>,
+    },
     /// In rescue, all user data is being erased, as the computer asked.
     Wiping,
     /// In rescue, erasing all user data ended: done, or why it stopped.
@@ -226,7 +256,15 @@ impl App {
         if matches!(ev, Event::Wipe | Event::Reboot(_)) {
             return;
         }
-        if matches!(ev, Event::Image { .. } | Event::Ready { .. } | Event::Script | Event::System { .. } | Event::Done(_) | Event::Finished(_)) {
+        if matches!(
+            ev,
+            Event::Image { .. }
+                | Event::Ready { .. }
+                | Event::Script
+                | Event::System { .. }
+                | Event::Done(_)
+                | Event::Finished(_)
+        ) {
             self.wake(now);
         }
         let install = &mut self.state.install;
@@ -234,19 +272,49 @@ impl App {
             Event::Waiting => *install = Install::Waiting,
             Event::Checking { size } => *install = Install::Checking { size, stage: None },
             Event::Ready { version, wipe } => *install = Install::Confirming { version, wipe },
-            Event::Installing { version } => *install = Install::Updating { version, stage: None, overwriting: false },
+            Event::Installing { version } => {
+                *install = Install::Updating {
+                    version,
+                    stage: None,
+                    overwriting: false,
+                }
+            }
             Event::Overwriting => {
                 if let Install::Updating { overwriting, .. } = install {
                     *overwriting = true;
                 }
             }
-            Event::Image { kind, size, partitions } => {
-                *install = Install::Choosing(Choice { kind, size, partitions, partition: 0, pick: Pick::Current })
+            Event::Image {
+                kind,
+                size,
+                partitions,
+            } => {
+                *install = Install::Choosing(Choice {
+                    kind,
+                    size,
+                    partitions,
+                    partition: 0,
+                    pick: Pick::Current,
+                })
             }
             Event::Script => *install = Install::ConfirmingScript,
-            Event::System { name, version, sizes } => *install = Install::SystemChoosing(SystemChoice { name, version, sizes, size: 0 }),
+            Event::System {
+                name,
+                version,
+                sizes,
+            } => {
+                *install = Install::SystemChoosing(SystemChoice {
+                    name,
+                    version,
+                    sizes,
+                    size: 0,
+                })
+            }
             Event::Running => {
-                *install = Install::Scripting { stage: None, running: true };
+                *install = Install::Scripting {
+                    stage: None,
+                    running: true,
+                };
                 self.state.script_output.clear();
             }
             Event::Print(line) => {
@@ -265,17 +333,36 @@ impl App {
                 _ => {}
             },
             Event::Reflashed(reflash) => self.state.reflash = Some(reflash),
-            Event::Wipe | Event::Reboot(_) => unreachable!("the runtime carries out what rescue asks of it"),
+            Event::Wipe | Event::Reboot(_) => {
+                unreachable!("the runtime carries out what rescue asks of it")
+            }
             Event::Done(outcome) | Event::Finished(outcome) => {
                 let damage = match (&outcome, &*install) {
-                    (Outcome::Failed(_), Install::Updating { overwriting: true, .. }) => Some(Damage::System),
+                    (
+                        Outcome::Failed(_),
+                        Install::Updating {
+                            overwriting: true, ..
+                        },
+                    ) => Some(Damage::System),
                     // A logical partition made as large as the image no
                     // longer holds what it held, written to or not.
-                    (Outcome::Failed(_), Install::Flashing { partition, stage: Some(Stage::Resizing) }) => Some(Damage::Partition(partition.clone())),
-                    (Outcome::Failed(_), Install::Flashing { partition, stage: Some(Stage::Flashing { done, .. }) }) if *done > 0 => {
-                        Some(Damage::Partition(partition.clone()))
+                    (
+                        Outcome::Failed(_),
+                        Install::Flashing {
+                            partition,
+                            stage: Some(Stage::Resizing),
+                        },
+                    ) => Some(Damage::Partition(partition.clone())),
+                    (
+                        Outcome::Failed(_),
+                        Install::Flashing {
+                            partition,
+                            stage: Some(Stage::Flashing { done, .. }),
+                        },
+                    ) if *done > 0 => Some(Damage::Partition(partition.clone())),
+                    (Outcome::Failed(_), Install::Scripting { running: true, .. }) => {
+                        Some(Damage::Script)
                     }
-                    (Outcome::Failed(_), Install::Scripting { running: true, .. }) => Some(Damage::Script),
                     _ => None,
                 };
                 *install = Install::Finished { outcome, damage };
@@ -288,15 +375,29 @@ impl App {
 
     /// Install the file of `size` bytes at `path` in `place`, its page
     /// following how it goes; one install at a time.
-    pub(super) fn install_file(&mut self, place: Place, path: String, size: u64, now: u64) -> Vec<Effect> {
+    pub(super) fn install_file(
+        &mut self,
+        place: Place,
+        path: String,
+        size: u64,
+        now: u64,
+    ) -> Vec<Effect> {
         let name = file_name(&path);
-        self.install_named(Source::File(place), name, size, Effect::InstallFile(place, path), now)
+        self.install_named(
+            Source::File(place),
+            name,
+            size,
+            Effect::InstallFile(place, path),
+            now,
+        )
     }
 
     /// Install the file of `size` bytes at the full `path`, opened in the
     /// file manager, as a file chosen in a place installs.
     pub(super) fn install_opened(&mut self, path: String, size: u64, now: u64) -> Vec<Effect> {
-        let source = Source::Opened { drive: std::path::Path::new(&path).starts_with(USB_DRIVE) };
+        let source = Source::Opened {
+            drive: std::path::Path::new(&path).starts_with(USB_DRIVE),
+        };
         let name = file_name(&path);
         self.install_named(source, name, size, Effect::InstallPath(path), now)
     }
@@ -304,7 +405,14 @@ impl App {
     /// Install the file `name` of `size` bytes from `source`, `start` asking
     /// the runtime to, its page following how it goes; one install at a
     /// time.
-    fn install_named(&mut self, source: Source, name: Option<String>, size: u64, start: Effect, now: u64) -> Vec<Effect> {
+    fn install_named(
+        &mut self,
+        source: Source,
+        name: Option<String>,
+        size: u64,
+        start: Effect,
+        now: u64,
+    ) -> Vec<Effect> {
         match self.state.install {
             Install::Idle | Install::Finished { .. } => {
                 self.begin_install(Install::Checking { size, stage: None }, source, name);
@@ -316,6 +424,72 @@ impl App {
                 Vec::new()
             }
         }
+    }
+}
+
+impl App {
+    /// Put a ZIP in the queue. Only `.zip` files go in: an image would
+    /// need a partition chosen, which a queue cannot ask for in the middle
+    /// of running one package after another.
+    pub fn queue_add(&mut self, place: Place, path: String, size: u64) -> bool {
+        if !path.to_ascii_lowercase().ends_with(".zip") {
+            return false;
+        }
+        self.state.queue.push(QueueEntry { place, path, size });
+        self.state.queue_add = false;
+        self.refresh();
+        true
+    }
+
+    /// Begin the queue: take its first ZIP out and make it the current
+    /// install. The runtime starts the installer from the returned path.
+    pub fn queue_begin(&mut self) -> Option<(Place, String)> {
+        if !matches!(self.state.install, Install::Idle | Install::Finished { .. }) {
+            return None;
+        }
+        let entry = self.state.queue.first().cloned()?;
+        self.state.queue.remove(0);
+        self.begin_install(
+            Install::Checking {
+                size: entry.size,
+                stage: None,
+            },
+            Source::File(entry.place),
+            file_name(&entry.path),
+        );
+        self.state.queue_running = true;
+        Some((entry.place, entry.path))
+    }
+
+    /// Take the next ZIP after one ended with success. The runtime starts
+    /// it; with none left, the queue stops.
+    pub fn queue_take_next(&mut self) -> Option<(Place, String)> {
+        if !self.state.queue_running {
+            return None;
+        }
+        let entry = self.state.queue.first().cloned();
+        let Some(entry) = entry else {
+            self.state.queue_running = false;
+            return None;
+        };
+        self.state.queue.remove(0);
+        self.begin_install(
+            Install::Checking {
+                size: entry.size,
+                stage: None,
+            },
+            Source::File(entry.place),
+            file_name(&entry.path),
+        );
+        self.refresh();
+        Some((entry.place, entry.path))
+    }
+
+    /// Stop adding the next ZIP after a failure; what is left stays in the
+    /// queue for the user to start again.
+    pub fn queue_stop(&mut self) {
+        self.state.queue_running = false;
+        self.refresh();
     }
 }
 
@@ -341,7 +515,11 @@ mod tests {
         app.install(Event::Checking { size: 4096 }, 0);
         assert_eq!(app.state.install, Install::Ending);
         tap(&mut app, &f, &i, Action::Sideload);
-        assert_eq!(app.screen(), Screen::Install, "no second installer while the first is ending");
+        assert_eq!(
+            app.screen(),
+            Screen::Install,
+            "no second installer while the first is ending"
+        );
         app.install(Event::Finished(Outcome::Cancelled), 0);
         assert_eq!(app.state.install, Install::Idle);
     }
@@ -351,21 +529,75 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
         app.install(Event::Checking { size: 201_326_592 }, 0);
-        let kind = ImageKind::Boot { kernel: true, ramdisk: skyward_install::Ramdisk::Recovery };
-        app.install(Event::Image { kind, size: 201_326_592, partitions: slotted(&["recovery", "boot"]) }, 0);
+        let kind = ImageKind::Boot {
+            kernel: true,
+            ramdisk: skyward_install::Ramdisk::Recovery,
+        };
+        app.install(
+            Event::Image {
+                kind,
+                size: 201_326_592,
+                partitions: slotted(&["recovery", "boot"]),
+            },
+            0,
+        );
         // The image lit the panel, so the user looks and taps past the wake
         // guard.
         tap_at(&mut app, &f, &i, Action::FlashPartition(1), 1000);
         tap_at(&mut app, &f, &i, Action::FlashSlots(Pick::Both), 1000);
-        assert_eq!(swipe_to_flash(&mut app, &f, &i), vec![Effect::Flash { partition: "boot".into(), place: FlashPlace::Slotted, pick: Pick::Both }]);
-        assert_eq!(app.state.install, Install::Flashing { partition: "boot".into(), stage: None });
-        app.install(Event::Progress(Stage::Flashing { done: 10, total: 40 }), 1000);
-        assert_eq!(app.state.install, Install::Flashing { partition: "boot".into(), stage: Some(Stage::Flashing { done: 10, total: 40 }) });
+        assert_eq!(
+            swipe_to_flash(&mut app, &f, &i),
+            vec![Effect::Flash {
+                partition: "boot".into(),
+                place: FlashPlace::Slotted,
+                pick: Pick::Both
+            }]
+        );
+        assert_eq!(
+            app.state.install,
+            Install::Flashing {
+                partition: "boot".into(),
+                stage: None
+            }
+        );
+        app.install(
+            Event::Progress(Stage::Flashing {
+                done: 10,
+                total: 40,
+            }),
+            1000,
+        );
+        assert_eq!(
+            app.state.install,
+            Install::Flashing {
+                partition: "boot".into(),
+                stage: Some(Stage::Flashing {
+                    done: 10,
+                    total: 40
+                })
+            }
+        );
         app.key(Key::Back, 1000);
-        assert_eq!(app.screen(), Screen::Installing, "a partition being written keeps the page");
-        app.install(Event::Finished(Outcome::Flashed { partition: "boot".into(), slots: vec![Slot::A, Slot::B] }), 1000);
-        assert!(matches!(app.state.install, Install::Finished { damage: None, .. }), "a flash that worked broke nothing");
-        assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 2000), vec![Effect::Reboot(Target::System)]);
+        assert_eq!(
+            app.screen(),
+            Screen::Installing,
+            "a partition being written keeps the page"
+        );
+        app.install(
+            Event::Finished(Outcome::Flashed {
+                partition: "boot".into(),
+                slots: vec![Slot::A, Slot::B],
+            }),
+            1000,
+        );
+        assert!(
+            matches!(app.state.install, Install::Finished { damage: None, .. }),
+            "a flash that worked broke nothing"
+        );
+        assert_eq!(
+            tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 2000),
+            vec![Effect::Reboot(Target::System)]
+        );
         app.key(Key::Back, 2000);
         assert_eq!(app.screen(), Screen::Install);
         assert_eq!(app.state.install, Install::Idle);
@@ -375,20 +607,52 @@ mod tests {
     fn an_update_shows_its_steps_and_cannot_be_left() {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
-        app.install(Event::Checking { size: 7_103_043_868 }, 0);
-        app.install(Event::Installing { version: Some("OS3.0.306.0.WMACNXM".into()) }, 0);
+        app.install(
+            Event::Checking {
+                size: 7_103_043_868,
+            },
+            0,
+        );
+        app.install(
+            Event::Installing {
+                version: Some("OS3.0.306.0.WMACNXM".into()),
+            },
+            0,
+        );
         app.install(Event::Overwriting, 0);
-        app.install(Event::Progress(Stage::Writing { done: 1 << 30, total: 7 << 30 }), 0);
-        assert!(matches!(app.state.install, Install::Updating { overwriting: true, stage: Some(_), .. }));
+        app.install(
+            Event::Progress(Stage::Writing {
+                done: 1 << 30,
+                total: 7 << 30,
+            }),
+            0,
+        );
+        assert!(matches!(
+            app.state.install,
+            Install::Updating {
+                overwriting: true,
+                stage: Some(_),
+                ..
+            }
+        ));
         let shown = app.frame(&f, &i).hits.len();
         assert_eq!(shown, 0, "nothing on the page to tap while installing");
         app.key(Key::Back, 0);
         assert_eq!(app.screen(), Screen::Installing);
         assert_eq!(app.deadline(0), Some(TOAST_MS), "it says why");
         app.install(Event::Finished(Outcome::Failed(Failure::Engine(9))), 0);
-        assert!(matches!(app.state.install, Install::Finished { damage: Some(Damage::System), .. }));
+        assert!(matches!(
+            app.state.install,
+            Install::Finished {
+                damage: Some(Damage::System),
+                ..
+            }
+        ));
         // Sending again starts over on the same page, past the wake guard.
-        assert_eq!(tap_at(&mut app, &f, &i, Action::Sideload, 1000), vec![Effect::Sideload]);
+        assert_eq!(
+            tap_at(&mut app, &f, &i, Action::Sideload, 1000),
+            vec![Effect::Sideload]
+        );
         assert_eq!(app.state.install, Install::Starting);
         assert_eq!(app.screen(), Screen::Installing);
     }
@@ -399,18 +663,33 @@ mod tests {
         let mut app = sideloading(&f, &i);
         app.install(Event::Checking { size: 10 }, 0);
         app.install(Event::Finished(Outcome::Refused(Refusal::Unknown)), 0);
-        assert_eq!(app.state.install, Install::Finished { outcome: Outcome::Refused(Refusal::Unknown), damage: None });
+        assert_eq!(
+            app.state.install,
+            Install::Finished {
+                outcome: Outcome::Refused(Refusal::Unknown),
+                damage: None
+            }
+        );
         tap_at(&mut app, &f, &i, Action::Sideload, 1000);
         app.install(Event::Waiting, 1000);
         app.install(Event::Installing { version: None }, 1000);
         app.install(Event::Finished(Outcome::Failed(Failure::Engine(21))), 1000);
-        assert!(matches!(app.state.install, Install::Finished { damage: None, .. }));
+        assert!(matches!(
+            app.state.install,
+            Install::Finished { damage: None, .. }
+        ));
     }
 
     /// Swipe the flash page's track to its end, at a time past the wake
     /// guard, and give what the page asks for.
     fn swipe_to_flash(app: &mut App, f: &Fonts, i: &DeviceInfo) -> Vec<Effect> {
-        let track = app.frame(f, i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::Flash)).unwrap().rect;
+        let track = app
+            .frame(f, i)
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Confirm(Confirm::Flash))
+            .unwrap()
+            .rect;
         let y = track.centre().1 - app.top().1;
         app.touch(Touch::Down(track.x + track.h / 2.0, y), f, 1000);
         app.touch(Touch::Move(track.x + track.w, y), f, 1000);
@@ -418,32 +697,122 @@ mod tests {
     }
 
     #[test]
+    fn a_queue_takes_only_zips_runs_them_one_after_another_and_keeps_the_rest() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Install, &f, &i);
+        assert!(
+            !app.queue_add(Place::Storage, "boot.img".into(), 5),
+            "an image cannot choose a partition later"
+        );
+        assert!(app.queue_add(Place::Storage, "one.zip".into(), 10));
+        assert!(app.queue_add(Place::UsbDrive, "two.zip".into(), 20));
+        assert_eq!(app.state.queue.len(), 2);
+        assert_eq!(app.queue_begin(), Some((Place::Storage, "one.zip".into())));
+        assert_eq!(app.state.queue.len(), 1);
+        assert!(app.state.queue_running);
+        app.install(Event::Finished(Outcome::Ran { wipe_cache: false }), 0);
+        assert_eq!(
+            app.queue_take_next(),
+            Some((Place::UsbDrive, "two.zip".into()))
+        );
+        assert!(app.state.queue.is_empty());
+        assert!(app.state.queue_running, "the last package still runs");
+        app.install(Event::Finished(Outcome::Failed(Failure::Disconnected)), 0);
+        app.queue_stop();
+        assert!(!app.state.queue_running);
+    }
+
+    #[test]
+    fn a_queue_stops_when_a_package_asks_for_a_cache_erase() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Install, &f, &i);
+        assert!(app.queue_add(Place::Storage, "one.zip".into(), 10));
+        assert!(app.queue_add(Place::Storage, "two.zip".into(), 20));
+        app.queue_begin();
+        app.install(Event::Finished(Outcome::Ran { wipe_cache: true }), 0);
+        // The runtime calls queue_stop for a cache erase; the queue itself
+        // does not start the next ZIP across that step.
+        app.queue_stop();
+        assert_eq!(
+            app.queue_take_next(),
+            None,
+            "a cache erase leaves the queue stopped"
+        );
+        assert_eq!(
+            app.state.queue.len(),
+            1,
+            "the next ZIP is kept for a new start"
+        );
+        assert!(!app.state.queue_running);
+    }
+
+    #[test]
     fn a_filesystem_image_goes_to_a_logical_partition_of_the_slot_the_phone_runs_from() {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
-        let logical = |name: &str| FlashTarget { name: name.into(), place: FlashPlace::Logical };
+        let logical = |name: &str| FlashTarget {
+            name: name.into(),
+            place: FlashPlace::Logical,
+        };
         let mut partitions = slotted(&["modem"]);
         partitions.extend([logical("odm"), logical("vendor")]);
         let kind = ImageKind::Filesystem(skyward_install::Filesystem::Erofs);
-        app.install(Event::Image { kind, size: 1 << 30, partitions }, 0);
+        app.install(
+            Event::Image {
+                kind,
+                size: 1 << 30,
+                partitions,
+            },
+            0,
+        );
         // The partition its file is named for comes first, and the phone
         // has it in both slots, which are there to pick.
-        let picks = |app: &mut App| app.frame(&f, &i).hits.iter().filter(|h| matches!(h.action, Action::FlashSlots(_))).count();
+        let picks = |app: &mut App| {
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .filter(|h| matches!(h.action, Action::FlashSlots(_)))
+                .count()
+        };
         assert_eq!(picks(&mut app), 3);
         tap_at(&mut app, &f, &i, Action::FlashSlots(Pick::Both), 1000);
         tap_at(&mut app, &f, &i, Action::FlashPartition(2), 1000);
-        assert_eq!(picks(&mut app), 0, "a logical partition is the running slot's, with nothing to pick");
-        assert_eq!(swipe_to_flash(&mut app, &f, &i), vec![Effect::Flash { partition: "vendor".into(), place: FlashPlace::Logical, pick: Pick::Both }]);
-        assert_eq!(Pick::Both.slots(FlashPlace::Logical, Slot::B), [Slot::B], "whatever was picked for another partition");
+        assert_eq!(
+            picks(&mut app),
+            0,
+            "a logical partition is the running slot's, with nothing to pick"
+        );
+        assert_eq!(
+            swipe_to_flash(&mut app, &f, &i),
+            vec![Effect::Flash {
+                partition: "vendor".into(),
+                place: FlashPlace::Logical,
+                pick: Pick::Both
+            }]
+        );
+        assert_eq!(
+            Pick::Both.slots(FlashPlace::Logical, Slot::B),
+            [Slot::B],
+            "whatever was picked for another partition"
+        );
         assert_eq!(Pick::Other.slots(FlashPlace::Slotted, Slot::B), [Slot::A]);
-        assert!(Pick::Current.slots(FlashPlace::Single, Slot::A).is_empty(), "super is in no slot");
+        assert!(
+            Pick::Current.slots(FlashPlace::Single, Slot::A).is_empty(),
+            "super is in no slot"
+        );
         // Once it is made as large as the image it no longer holds what it
         // held, though nothing of the image is in it yet.
         app.install(Event::Progress(Stage::Resizing), 1000);
-        app.install(Event::Finished(Outcome::Failed(Failure::Error("map vendor_b".into()))), 1000);
+        app.install(
+            Event::Finished(Outcome::Failed(Failure::Error("map vendor_b".into()))),
+            1000,
+        );
         assert_eq!(
             app.state.install,
-            Install::Finished { outcome: Outcome::Failed(Failure::Error("map vendor_b".into())), damage: Some(Damage::Partition("vendor".into())) }
+            Install::Finished {
+                outcome: Outcome::Failed(Failure::Error("map vendor_b".into())),
+                damage: Some(Damage::Partition("vendor".into()))
+            }
         );
     }
 
@@ -451,12 +820,43 @@ mod tests {
     fn a_whole_super_is_flashed_to_no_slot() {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
-        let partitions = vec![FlashTarget { name: "super".into(), place: FlashPlace::Single }];
-        app.install(Event::Image { kind: ImageKind::Super, size: 9_663_676_416, partitions }, 0);
-        assert!(!app.frame(&f, &i).hits.iter().any(|h| matches!(h.action, Action::FlashSlots(_))));
-        assert_eq!(swipe_to_flash(&mut app, &f, &i), vec![Effect::Flash { partition: "super".into(), place: FlashPlace::Single, pick: Pick::Current }]);
-        app.install(Event::Finished(Outcome::Flashed { partition: "super".into(), slots: Vec::new() }), 1000);
-        assert!(matches!(app.state.install, Install::Finished { damage: None, .. }));
+        let partitions = vec![FlashTarget {
+            name: "super".into(),
+            place: FlashPlace::Single,
+        }];
+        app.install(
+            Event::Image {
+                kind: ImageKind::Super,
+                size: 9_663_676_416,
+                partitions,
+            },
+            0,
+        );
+        assert!(
+            !app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| matches!(h.action, Action::FlashSlots(_)))
+        );
+        assert_eq!(
+            swipe_to_flash(&mut app, &f, &i),
+            vec![Effect::Flash {
+                partition: "super".into(),
+                place: FlashPlace::Single,
+                pick: Pick::Current
+            }]
+        );
+        app.install(
+            Event::Finished(Outcome::Flashed {
+                partition: "super".into(),
+                slots: Vec::new(),
+            }),
+            1000,
+        );
+        assert!(matches!(
+            app.state.install,
+            Install::Finished { damage: None, .. }
+        ));
         app.frame(&f, &i);
     }
 
@@ -464,33 +864,99 @@ mod tests {
     fn an_image_that_failed_part_way_names_its_partition() {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
-        app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: slotted(&["dtbo"]) }, 0);
-        app.state.install = Install::Flashing { partition: "dtbo".into(), stage: None };
-        app.install(Event::Progress(Stage::Flashing { done: 1 << 20, total: 4 << 20 }), 0);
+        app.install(
+            Event::Image {
+                kind: ImageKind::Dtbo,
+                size: 1 << 20,
+                partitions: slotted(&["dtbo"]),
+            },
+            0,
+        );
+        app.state.install = Install::Flashing {
+            partition: "dtbo".into(),
+            stage: None,
+        };
+        app.install(
+            Event::Progress(Stage::Flashing {
+                done: 1 << 20,
+                total: 4 << 20,
+            }),
+            0,
+        );
         app.install(Event::Finished(Outcome::Failed(Failure::Disconnected)), 0);
-        assert_eq!(app.state.install, Install::Finished { outcome: Outcome::Failed(Failure::Disconnected), damage: Some(Damage::Partition("dtbo".into())) });
+        assert_eq!(
+            app.state.install,
+            Install::Finished {
+                outcome: Outcome::Failed(Failure::Disconnected),
+                damage: Some(Damage::Partition("dtbo".into()))
+            }
+        );
     }
 
     #[test]
     fn an_update_that_erases_all_user_data_waits_to_be_agreed_to() {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
-        app.install(Event::Checking { size: 7_103_043_868 }, 0);
-        app.install(Event::Ready { version: Some("OS3.0.306.0.WMACNXM".into()), wipe: true }, 0);
-        assert_eq!(app.state.install, Install::Confirming { version: Some("OS3.0.306.0.WMACNXM".into()), wipe: true });
+        app.install(
+            Event::Checking {
+                size: 7_103_043_868,
+            },
+            0,
+        );
+        app.install(
+            Event::Ready {
+                version: Some("OS3.0.306.0.WMACNXM".into()),
+                wipe: true,
+            },
+            0,
+        );
+        assert_eq!(
+            app.state.install,
+            Install::Confirming {
+                version: Some("OS3.0.306.0.WMACNXM".into()),
+                wipe: true
+            }
+        );
         // The question lit the panel, so the user swipes past the wake guard.
-        let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::InstallWipe)).unwrap().rect;
+        let track = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Confirm(Confirm::InstallWipe))
+            .unwrap()
+            .rect;
         let y = track.centre().1 - app.top().1;
         app.touch(Touch::Down(track.x + track.h / 2.0, y), &f, 1000);
         app.touch(Touch::Move(track.x + track.w, y), &f, 1000);
         assert_eq!(app.touch(Touch::Up, &f, 1000), vec![Effect::Install]);
-        assert_eq!(app.state.install, Install::Updating { version: Some("OS3.0.306.0.WMACNXM".into()), stage: None, overwriting: false });
+        assert_eq!(
+            app.state.install,
+            Install::Updating {
+                version: Some("OS3.0.306.0.WMACNXM".into()),
+                stage: None,
+                overwriting: false
+            }
+        );
         app.key(Key::Back, 1000);
-        assert_eq!(app.screen(), Screen::Installing, "an update being written keeps the page");
+        assert_eq!(
+            app.screen(),
+            Screen::Installing,
+            "an update being written keeps the page"
+        );
 
         let mut app = sideloading(&f, &i);
-        app.install(Event::Ready { version: None, wipe: true }, 0);
-        assert_eq!(app.key(Key::Back, 1000), vec![Effect::Cancel], "turning it down cancels before anything is written");
+        app.install(
+            Event::Ready {
+                version: None,
+                wipe: true,
+            },
+            0,
+        );
+        assert_eq!(
+            app.key(Key::Back, 1000),
+            vec![Effect::Cancel],
+            "turning it down cancels before anything is written"
+        );
         assert_eq!(app.state.install, Install::Ending);
         assert_eq!(app.screen(), Screen::Install);
     }
@@ -500,38 +966,97 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Install, &f, &i);
         app.data_waiting(None);
-        tap(&mut app, &f, &i, Action::Open(Screen::Choose(Place::Storage)));
-        app.set_place(Place::Storage, String::new(), Ok(vec![entry("rom.zip", FileKind::File)]), LISTED);
-        assert_eq!(tap(&mut app, &f, &i, Action::ChooseEntry(0)), vec![Effect::InstallFile(Place::Storage, "rom.zip".into())]);
-        assert_eq!(app.state.package_name.as_deref(), Some("rom.zip"), "the question names the file");
+        tap(
+            &mut app,
+            &f,
+            &i,
+            Action::Open(Screen::Choose(Place::Storage)),
+        );
+        app.set_place(
+            Place::Storage,
+            String::new(),
+            Ok(vec![entry("rom.zip", FileKind::File)]),
+            LISTED,
+        );
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::ChooseEntry(0)),
+            vec![Effect::InstallFile(Place::Storage, "rom.zip".into())]
+        );
+        assert_eq!(
+            app.state.package_name.as_deref(),
+            Some("rom.zip"),
+            "the question names the file"
+        );
         app.install(Event::Script, 0);
         assert_eq!(app.state.install, Install::ConfirmingScript);
         // The question lit the panel, so the user swipes past the wake guard.
-        let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::RunScript)).unwrap().rect;
+        let track = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Confirm(Confirm::RunScript))
+            .unwrap()
+            .rect;
         let y = track.centre().1 - app.top().1;
         app.touch(Touch::Down(track.x + track.h / 2.0, y), &f, 1000);
         app.touch(Touch::Move(track.x + track.w, y), &f, 1000);
         assert_eq!(app.touch(Touch::Up, &f, 1000), vec![Effect::Install]);
-        assert_eq!(app.state.install, Install::Scripting { stage: None, running: false });
+        assert_eq!(
+            app.state.install,
+            Install::Scripting {
+                stage: None,
+                running: false
+            }
+        );
         app.install(Event::Running, 1000);
         for line in ["- Flashing boot", " ", "- Done"] {
             app.install(Event::Print(line.into()), 1000);
         }
         app.install(Event::Progress(Stage::Script { thousandths: 500 }), 1000);
-        assert_eq!(app.state.install, Install::Scripting { stage: Some(Stage::Script { thousandths: 500 }), running: true });
+        assert_eq!(
+            app.state.install,
+            Install::Scripting {
+                stage: Some(Stage::Script { thousandths: 500 }),
+                running: true
+            }
+        );
         let fr = app.frame(&f, &i);
-        assert!(fr.hits.is_empty(), "nothing on the page to tap while the script runs");
-        assert_eq!(fr.rows.as_ref().map(Rows::count), Some(3), "a row to each line it showed");
+        assert!(
+            fr.hits.is_empty(),
+            "nothing on the page to tap while the script runs"
+        );
+        assert_eq!(
+            fr.rows.as_ref().map(Rows::count),
+            Some(3),
+            "a row to each line it showed"
+        );
         app.key(Key::Back, 1000);
-        assert_eq!(app.screen(), Screen::Installing, "a script running keeps the page");
+        assert_eq!(
+            app.screen(),
+            Screen::Installing,
+            "a script running keeps the page"
+        );
         assert_eq!(app.deadline(1000), Some(1000 + TOAST_MS), "it says why");
         app.install(Event::Finished(Outcome::Ran { wipe_cache: false }), 1000);
-        assert_eq!(app.state.install, Install::Finished { outcome: Outcome::Ran { wipe_cache: false }, damage: None });
+        assert_eq!(
+            app.state.install,
+            Install::Finished {
+                outcome: Outcome::Ran { wipe_cache: false },
+                damage: None
+            }
+        );
         let fr = app.frame(&f, &i);
         let rows = fr.rows.as_ref().expect("what it showed stays on the page");
         assert_eq!(rows.count(), 3);
-        assert!(fr.hit(W as f32 / 2.0, rows.rect(1, W as f32).centre().1).is_none(), "its lines answer no touch");
-        assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 2000), vec![Effect::Reboot(Target::System)]);
+        assert!(
+            fr.hit(W as f32 / 2.0, rows.rect(1, W as f32).centre().1)
+                .is_none(),
+            "its lines answer no touch"
+        );
+        assert_eq!(
+            tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 2000),
+            vec![Effect::Reboot(Target::System)]
+        );
     }
 
     #[test]
@@ -539,26 +1064,61 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
         app.install(Event::Script, 0);
-        assert_eq!(app.key(Key::Back, 1000), vec![Effect::Cancel], "turning it down cancels before it runs");
-        assert_eq!((app.screen(), &app.state.install), (Screen::Install, &Install::Ending));
+        assert_eq!(
+            app.key(Key::Back, 1000),
+            vec![Effect::Cancel],
+            "turning it down cancels before it runs"
+        );
+        assert_eq!(
+            (app.screen(), &app.state.install),
+            (Screen::Install, &Install::Ending)
+        );
 
         let mut app = sideloading(&f, &i);
         app.install(Event::Script, 0);
-        app.state.install = Install::Scripting { stage: None, running: false };
+        app.state.install = Install::Scripting {
+            stage: None,
+            running: false,
+        };
         let full = "extract META-INF/com/google/android/update-binary: No space left on device (os error 28)";
-        app.install(Event::Finished(Outcome::Failed(Failure::Error(full.into()))), 0);
-        assert!(matches!(app.state.install, Install::Finished { damage: None, .. }), "a script that never ran wrote nothing");
+        app.install(
+            Event::Finished(Outcome::Failed(Failure::Error(full.into()))),
+            0,
+        );
+        assert!(
+            matches!(app.state.install, Install::Finished { damage: None, .. }),
+            "a script that never ran wrote nothing"
+        );
         tap_at(&mut app, &f, &i, Action::Sideload, 1000);
         app.install(Event::Waiting, 1000);
         app.install(Event::Script, 1000);
-        app.state.install = Install::Scripting { stage: None, running: false };
+        app.state.install = Install::Scripting {
+            stage: None,
+            running: false,
+        };
         app.install(Event::Running, 1000);
         app.install(Event::Print("! Could not write vendor_b".into()), 1000);
         app.install(Event::Finished(Outcome::Failed(Failure::Script(1))), 1000);
-        assert_eq!(app.state.install, Install::Finished { outcome: Outcome::Failed(Failure::Script(1)), damage: Some(Damage::Script) });
-        assert_eq!(app.state.script_output, ["! Could not write vendor_b"], "what it showed before it failed stays");
-        assert_eq!(tap_at(&mut app, &f, &i, Action::Sideload, 2000), vec![Effect::Sideload]);
-        assert!(app.state.script_output.is_empty(), "sending again starts afresh");
+        assert_eq!(
+            app.state.install,
+            Install::Finished {
+                outcome: Outcome::Failed(Failure::Script(1)),
+                damage: Some(Damage::Script)
+            }
+        );
+        assert_eq!(
+            app.state.script_output,
+            ["! Could not write vendor_b"],
+            "what it showed before it failed stays"
+        );
+        assert_eq!(
+            tap_at(&mut app, &f, &i, Action::Sideload, 2000),
+            vec![Effect::Sideload]
+        );
+        assert!(
+            app.state.script_output.is_empty(),
+            "sending again starts afresh"
+        );
     }
 
     #[test]
@@ -572,14 +1132,22 @@ mod tests {
         }
         assert_eq!(app.state.script_output.len(), SCRIPT_LINES);
         assert_eq!(app.state.script_output[0], "line 2");
-        assert_eq!(app.frame(&f, &i).rows.as_ref().map(Rows::count), Some(SCRIPT_LINES));
+        assert_eq!(
+            app.frame(&f, &i).rows.as_ref().map(Rows::count),
+            Some(SCRIPT_LINES)
+        );
     }
 
     #[test]
     fn the_install_page_offers_to_keep_skyward_where_the_phone_has_recovery_partitions() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Install, &f, &i);
-        let offered = |app: &mut App| app.frame(&f, &i).hits.iter().any(|h| h.action == Action::Toggle(Switch::KeepRecovery));
+        let offered = |app: &mut App| {
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| h.action == Action::Toggle(Switch::KeepRecovery))
+        };
         assert!(!offered(&mut app), "a phone whose recovery lives in boot");
         app.state.recovery_partitions = true;
         app.refresh();
@@ -593,7 +1161,13 @@ mod tests {
     fn the_install_page_offers_to_check_a_zips_signature_off_until_turned_on() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Install, &f, &i);
-        assert!(app.frame(&f, &i).hits.iter().any(|h| h.action == Action::Toggle(Switch::Signature)), "on any phone");
+        assert!(
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| h.action == Action::Toggle(Switch::Signature)),
+            "on any phone"
+        );
         assert!(!app.state.check_signature);
         tap(&mut app, &f, &i, Action::Toggle(Switch::Signature));
         assert!(app.state.check_signature);
@@ -605,13 +1179,36 @@ mod tests {
         let mut app = sideloading(&f, &i);
         app.install(Event::Checking { size: 4096 }, 0);
         app.key(Key::Back, 1000);
-        assert_eq!(app.screen(), Screen::Installing, "a package being looked at keeps the page");
-        let checking = Stage::Signature { done: 1024, total: 4000 };
+        assert_eq!(
+            app.screen(),
+            Screen::Installing,
+            "a package being looked at keeps the page"
+        );
+        let checking = Stage::Signature {
+            done: 1024,
+            total: 4000,
+        };
         app.install(Event::Progress(checking.clone()), 1000);
-        assert_eq!(app.state.install, Install::Checking { size: 4096, stage: Some(checking) });
-        assert!(app.frame(&f, &i).hits.is_empty(), "nothing on the page to tap while it is checked");
-        assert_eq!(app.key(Key::Back, 2000), vec![Effect::Cancel], "checking only reads, so leaving stops it");
-        assert_eq!((app.screen(), &app.state.install), (Screen::Install, &Install::Ending));
+        assert_eq!(
+            app.state.install,
+            Install::Checking {
+                size: 4096,
+                stage: Some(checking)
+            }
+        );
+        assert!(
+            app.frame(&f, &i).hits.is_empty(),
+            "nothing on the page to tap while it is checked"
+        );
+        assert_eq!(
+            app.key(Key::Back, 2000),
+            vec![Effect::Cancel],
+            "checking only reads, so leaving stops it"
+        );
+        assert_eq!(
+            (app.screen(), &app.state.install),
+            (Screen::Install, &Install::Ending)
+        );
         app.install(Event::Finished(Outcome::Cancelled), 2000);
         assert_eq!(app.state.install, Install::Idle);
     }
@@ -622,9 +1219,18 @@ mod tests {
         let mut app = sideloading(&f, &i);
         app.install(Event::Script, 0);
         app.install(Event::Running, 0);
-        let writing = Stage::Reflashing { done: 1 << 20, total: 4 << 20 };
+        let writing = Stage::Reflashing {
+            done: 1 << 20,
+            total: 4 << 20,
+        };
         app.install(Event::Progress(writing.clone()), 0);
-        assert_eq!(app.state.install, Install::Scripting { stage: Some(writing), running: true });
+        assert_eq!(
+            app.state.install,
+            Install::Scripting {
+                stage: Some(writing),
+                running: true
+            }
+        );
         let why = "write /dev/block/by-name/recovery_a: Input/output error (os error 5)";
         app.install(Event::Reflashed(Reflash::Failed(why.into())), 0);
         app.install(Event::Finished(Outcome::Failed(Failure::Script(1))), 0);
@@ -634,10 +1240,28 @@ mod tests {
 
         app.install(Event::Waiting, 1000);
         app.install(Event::Installing { version: None }, 1000);
-        app.install(Event::Progress(Stage::Reflashing { done: 1, total: 2 }), 1000);
-        assert!(matches!(app.state.install, Install::Updating { stage: Some(Stage::Reflashing { .. }), .. }), "an update writes it back too");
+        app.install(
+            Event::Progress(Stage::Reflashing { done: 1, total: 2 }),
+            1000,
+        );
+        assert!(
+            matches!(
+                app.state.install,
+                Install::Updating {
+                    stage: Some(Stage::Reflashing { .. }),
+                    ..
+                }
+            ),
+            "an update writes it back too"
+        );
         app.install(Event::Reflashed(Reflash::Written(vec![Slot::A])), 1000);
-        app.install(Event::Finished(Outcome::Installed { slot: Slot::A, wipe: false }), 1000);
+        app.install(
+            Event::Finished(Outcome::Installed {
+                slot: Slot::A,
+                wipe: false,
+            }),
+            1000,
+        );
         assert_eq!(app.state.reflash, Some(Reflash::Written(vec![Slot::A])));
     }
 
@@ -645,9 +1269,18 @@ mod tests {
     fn work_the_recovery_does_not_do_is_shown_with_where_to_go() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Unhandled, W, H, PPD);
-        app.set_asked(Asked { unhandled: Some("--update_package=/data/ota_package/update.zip".into()), ..Asked::default() });
-        assert_eq!(tap(&mut app, &f, &i, Action::RebootTo(Target::System)), vec![Effect::Reboot(Target::System)]);
-        assert_eq!(tap(&mut app, &f, &i, Action::Dismiss), vec![Effect::Dismiss]);
+        app.set_asked(Asked {
+            unhandled: Some("--update_package=/data/ota_package/update.zip".into()),
+            ..Asked::default()
+        });
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::RebootTo(Target::System)),
+            vec![Effect::Reboot(Target::System)]
+        );
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::Dismiss),
+            vec![Effect::Dismiss]
+        );
         assert_eq!(app.screen(), Screen::Home);
     }
 
@@ -656,14 +1289,29 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.start_asked(false, "/sdcard/update.zip".into());
-        assert_eq!((app.screen(), app.state.source), (Screen::Installing, Source::Asked { security: false }));
+        assert_eq!(
+            (app.screen(), app.state.source),
+            (Screen::Installing, Source::Asked { security: false })
+        );
         app.asked_opening();
         app.key(Key::Back, 0);
-        assert_eq!((app.screen(), toast(&app)), (Screen::Installing, Some("正在打开 data 分区，请稍后再试")));
+        assert_eq!(
+            (app.screen(), toast(&app)),
+            (Screen::Installing, Some("正在打开 data 分区，请稍后再试"))
+        );
         app.asked_locked(0, 0);
         assert_eq!(app.state.install, Install::Locked(0));
-        assert!(app.frame(&f, &i).hits.iter().any(|h| h.action == Action::Open(Screen::Decrypt)));
-        assert_eq!(app.key(Key::Back, 5000), vec![Effect::Cancel], "leaving gives the update up");
+        assert!(
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| h.action == Action::Open(Screen::Decrypt))
+        );
+        assert_eq!(
+            app.key(Key::Back, 5000),
+            vec![Effect::Cancel],
+            "leaving gives the update up"
+        );
         app.install(Event::Finished(Outcome::Cancelled), 5000);
         assert_eq!(app.state.install, Install::Idle);
     }
@@ -673,18 +1321,37 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.start_rescue();
-        assert_eq!((app.screen(), app.state.source), (Screen::Installing, Source::Rescue));
+        assert_eq!(
+            (app.screen(), app.state.source),
+            (Screen::Installing, Source::Rescue)
+        );
         app.install(Event::Waiting, 0);
         app.install(Event::Checking { size: 4096 }, 0);
-        app.install(Event::Done(Outcome::Installed { slot: Slot::B, wipe: false }), 0);
+        app.install(
+            Event::Done(Outcome::Installed {
+                slot: Slot::B,
+                wipe: false,
+            }),
+            0,
+        );
         assert!(matches!(app.state.install, Install::Finished { .. }));
         app.rescue_wiping();
         app.key(Key::Back, 5000);
-        assert_eq!((app.screen(), toast(&app)), (Screen::Installing, Some("正在清除，请等待清除完成")));
+        assert_eq!(
+            (app.screen(), toast(&app)),
+            (Screen::Installing, Some("正在清除，请等待清除完成"))
+        );
         app.rescue_wiped(Ok(()), 6000);
-        assert_eq!((app.state.install.clone(), app.state.data.clone()), (Install::Wiped(Ok(())), Data::Erased));
+        assert_eq!(
+            (app.state.install.clone(), app.state.data.clone()),
+            (Install::Wiped(Ok(())), Data::Erased)
+        );
         app.frame(&f, &i);
-        assert_eq!(app.key(Key::Back, 12000), vec![Effect::Cancel], "leaving ends rescue");
+        assert_eq!(
+            app.key(Key::Back, 12000),
+            vec![Effect::Cancel],
+            "leaving ends rescue"
+        );
         assert_eq!(app.state.install, Install::Ending);
     }
 }

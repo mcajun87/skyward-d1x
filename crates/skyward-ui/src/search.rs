@@ -1,5 +1,5 @@
 use crate::app::Screen;
-use crate::lang::{same, Lang, Text};
+use crate::lang::{Lang, Text, same};
 use crate::texts::{self, page, search::keys};
 use unicode_script::{Script, UnicodeScript};
 
@@ -18,7 +18,12 @@ pub struct Entry {
 }
 
 const fn entry(title: Text, place: Text, screen: Screen, keys: Text) -> Entry {
-    Entry { title, place, screen, keys }
+    Entry {
+        title,
+        place,
+        screen,
+        keys,
+    }
 }
 
 /// A title as the keyboard can type it: in small letters, each Latin
@@ -28,7 +33,9 @@ fn typed(title: &str) -> String {
     title
         .chars()
         .map(|ch| match ch.script() {
-            Script::Latin if !ch.is_ascii() => deunicode::deunicode_char(ch).unwrap_or_default().to_ascii_lowercase(),
+            Script::Latin if !ch.is_ascii() => deunicode::deunicode_char(ch)
+                .unwrap_or_default()
+                .to_ascii_lowercase(),
             _ => ch.to_lowercase().collect(),
         })
         .collect()
@@ -36,7 +43,12 @@ fn typed(title: &str) -> String {
 
 /// A partition, named the same in every language.
 const fn partition(name: &'static str, place: Text, screen: Screen) -> Entry {
-    Entry { title: same(name), place, screen, keys: same("") }
+    Entry {
+        title: same(name),
+        place,
+        screen,
+        keys: same(""),
+    }
 }
 
 const HOME: Text = page::HOME;
@@ -49,9 +61,24 @@ pub const ENTRIES: &[Entry] = &[
     entry(page::WLAN, HOME, Screen::Wlan, keys::WLAN),
     entry(page::DUAL_BOOT, HOME, Screen::Systems, keys::DUAL_BOOT),
     entry(INSTALL, HOME, Screen::Install, keys::INSTALL),
-    entry(texts::install::title::FROM_STORAGE, INSTALL, Screen::Install, keys::FROM_STORAGE),
-    entry(texts::install::title::FROM_USB_DRIVE, INSTALL, Screen::Install, keys::FROM_USB_DRIVE),
-    entry(texts::install::title::FROM_COMPUTER, INSTALL, Screen::Install, keys::FROM_COMPUTER),
+    entry(
+        texts::install::title::FROM_STORAGE,
+        INSTALL,
+        Screen::Install,
+        keys::FROM_STORAGE,
+    ),
+    entry(
+        texts::install::title::FROM_USB_DRIVE,
+        INSTALL,
+        Screen::Install,
+        keys::FROM_USB_DRIVE,
+    ),
+    entry(
+        texts::install::title::FROM_COMPUTER,
+        INSTALL,
+        Screen::Install,
+        keys::FROM_COMPUTER,
+    ),
     entry(page::BACKUP, HOME, Screen::Backup, keys::BACKUP),
     entry(page::RESTORE, HOME, Screen::Restore, keys::RESTORE),
     entry(MOUNT, HOME, Screen::Mount, keys::MOUNT),
@@ -60,25 +87,85 @@ pub const ENTRIES: &[Entry] = &[
     entry(page::FILES, ADVANCED, Screen::Files, keys::FILES),
     entry(page::TERMINAL, ADVANCED, Screen::Terminal, keys::TERMINAL),
     entry(page::RELABEL, ADVANCED, Screen::Relabel, keys::RELABEL),
-    entry(page::FILESYSTEMS, ADVANCED, Screen::Filesystems, keys::FILESYSTEMS),
+    entry(
+        page::FILESYSTEMS,
+        ADVANCED,
+        Screen::Filesystems,
+        keys::FILESYSTEMS,
+    ),
     entry(page::LOGS, ADVANCED, Screen::Logs, keys::LOGS),
     entry(page::UPDATE, ADVANCED, Screen::Update, keys::UPDATE),
     entry(SETTINGS, HOME, Screen::Settings, keys::SETTINGS),
-    entry(texts::settings::DARK_MODE, SETTINGS, Screen::Settings, keys::DARK_MODE),
-    entry(texts::settings::SCREEN_BRIGHTNESS, SETTINGS, Screen::Settings, keys::BRIGHTNESS),
-    entry(page::SCREEN_TIMEOUT, SETTINGS, Screen::ScreenOff, keys::SCREEN_TIMEOUT),
-    entry(texts::settings::VIBRATION_INTENSITY, SETTINGS, Screen::Settings, keys::VIBRATION_INTENSITY),
-    entry(texts::settings::TOUCH_VIBRATION, SETTINGS, Screen::Settings, keys::TOUCH_VIBRATION),
-    entry(texts::settings::FILE_TRANSFER, SETTINGS, Screen::Settings, keys::FILE_TRANSFER),
+    entry(
+        texts::settings::DARK_MODE,
+        SETTINGS,
+        Screen::Settings,
+        keys::DARK_MODE,
+    ),
+    entry(
+        texts::settings::SCREEN_BRIGHTNESS,
+        SETTINGS,
+        Screen::Settings,
+        keys::BRIGHTNESS,
+    ),
+    entry(
+        page::SCREEN_TIMEOUT,
+        SETTINGS,
+        Screen::ScreenOff,
+        keys::SCREEN_TIMEOUT,
+    ),
+    entry(
+        texts::settings::VIBRATION_INTENSITY,
+        SETTINGS,
+        Screen::Settings,
+        keys::VIBRATION_INTENSITY,
+    ),
+    entry(
+        texts::settings::TOUCH_VIBRATION,
+        SETTINGS,
+        Screen::Settings,
+        keys::TOUCH_VIBRATION,
+    ),
+    entry(
+        texts::settings::FILE_TRANSFER,
+        SETTINGS,
+        Screen::Settings,
+        keys::FILE_TRANSFER,
+    ),
     entry(page::LANGUAGE, SETTINGS, Screen::Language, keys::LANGUAGE),
     entry(page::TIME_ZONE, SETTINGS, Screen::TimeZone, keys::TIME_ZONE),
     entry(page::REBOOT, HOME, Screen::Reboot, keys::REBOOT),
-    entry(texts::slot::BOOT_SLOT, page::REBOOT, Screen::Slot, keys::SLOT),
+    entry(
+        texts::slot::BOOT_SLOT,
+        page::REBOOT,
+        Screen::Slot,
+        keys::SLOT,
+    ),
     entry(page::ABOUT, SETTINGS, Screen::About, keys::ABOUT),
-    entry(page::SKYWARD_UPDATE, SETTINGS, Screen::SkywardUpdate, keys::SKYWARD_UPDATE),
-    entry(page::SPECS, texts::search::IN_ABOUT, Screen::Specs, keys::SPECS),
-    entry(page::LICENSE, texts::search::IN_SPECS, Screen::License, keys::LICENSE),
-    entry(page::FONTS, texts::search::IN_SPECS, Screen::FontLicense, keys::FONTS),
+    entry(
+        page::SKYWARD_UPDATE,
+        SETTINGS,
+        Screen::SkywardUpdate,
+        keys::SKYWARD_UPDATE,
+    ),
+    entry(
+        page::SPECS,
+        texts::search::IN_ABOUT,
+        Screen::Specs,
+        keys::SPECS,
+    ),
+    entry(
+        page::LICENSE,
+        texts::search::IN_SPECS,
+        Screen::License,
+        keys::LICENSE,
+    ),
+    entry(
+        page::FONTS,
+        texts::search::IN_SPECS,
+        Screen::FontLicense,
+        keys::FONTS,
+    ),
     partition("boot", INSTALL, Screen::Install),
     partition("init_boot", INSTALL, Screen::Install),
     partition("vendor_boot", INSTALL, Screen::Install),
@@ -104,7 +191,11 @@ pub fn find(query: &str, l: Lang) -> Vec<&'static Entry> {
         return Vec::new();
     }
     let rank = |e: &Entry| {
-        let keys = || l.pick(e.keys).split(' ').chain(Lang::En.pick(e.keys).split(' '));
+        let keys = || {
+            l.pick(e.keys)
+                .split(' ')
+                .chain(Lang::En.pick(e.keys).split(' '))
+        };
         if typed(l.pick(e.title)).contains(&q) {
             Some(0)
         } else if keys().any(|k| k.starts_with(&q)) {
@@ -115,7 +206,11 @@ pub fn find(query: &str, l: Lang) -> Vec<&'static Entry> {
             None
         }
     };
-    let mut found: Vec<(u8, usize, &Entry)> = ENTRIES.iter().enumerate().filter_map(|(k, e)| rank(e).map(|r| (r, k, e))).collect();
+    let mut found: Vec<(u8, usize, &Entry)> = ENTRIES
+        .iter()
+        .enumerate()
+        .filter_map(|(k, e)| rank(e).map(|r| (r, k, e)))
+        .collect();
     found.sort_by_key(|&(r, k, _)| (r, k));
     found.into_iter().map(|(_, _, e)| e).collect()
 }
@@ -123,7 +218,10 @@ pub fn find(query: &str, l: Lang) -> Vec<&'static Entry> {
 /// What [`find`] finds that the phone has, as `offers` tells of each page:
 /// a phone whose WLAN the recovery does not bring up has no WLAN page.
 pub fn find_on(query: &str, l: Lang, offers: impl Fn(Screen) -> bool) -> Vec<&'static Entry> {
-    find(query, l).into_iter().filter(|e| offers(e.screen)).collect()
+    find(query, l)
+        .into_iter()
+        .filter(|e| offers(e.screen))
+        .collect()
 }
 
 #[cfg(test)]
@@ -131,7 +229,10 @@ mod tests {
     use super::*;
 
     fn titles(query: &str) -> Vec<&'static str> {
-        find(query, Lang::Hans).iter().map(|e| Lang::Hans.pick(e.title)).collect()
+        find(query, Lang::Hans)
+            .iter()
+            .map(|e| Lang::Hans.pick(e.title))
+            .collect()
     }
 
     #[test]
@@ -165,7 +266,13 @@ mod tests {
     #[test]
     fn the_wlan_is_found_where_the_phone_has_it() {
         assert_eq!(titles("wifi"), ["WLAN"]);
-        assert_eq!(find_on("wlan", Lang::Hans, |_| true).iter().map(|e| Lang::Hans.pick(e.title)).collect::<Vec<_>>(), ["WLAN"]);
+        assert_eq!(
+            find_on("wlan", Lang::Hans, |_| true)
+                .iter()
+                .map(|e| Lang::Hans.pick(e.title))
+                .collect::<Vec<_>>(),
+            ["WLAN"]
+        );
         assert!(find_on("wlan", Lang::Hans, |s| s != Screen::Wlan).is_empty());
         assert_eq!(titles("xiazai"), ["系统更新", "Skyward 更新"]);
     }
@@ -174,7 +281,13 @@ mod tests {
     fn the_second_system_is_found_where_the_phone_can_hold_one() {
         assert_eq!(titles("sxt"), ["双系统"]);
         assert_eq!(titles("qiehuan"), ["双系统"]);
-        assert_eq!(find("dual", Lang::En).iter().map(|e| Lang::En.pick(e.title)).collect::<Vec<_>>(), ["Dual boot"]);
+        assert_eq!(
+            find("dual", Lang::En)
+                .iter()
+                .map(|e| Lang::En.pick(e.title))
+                .collect::<Vec<_>>(),
+            ["Dual boot"]
+        );
         assert!(find_on("shuangxitong", Lang::Hans, |s| s != Screen::Systems).is_empty());
     }
 
@@ -187,21 +300,39 @@ mod tests {
 
     #[test]
     fn a_title_is_found_in_the_language_the_pages_speak() {
-        let english = |query| find(query, Lang::En).iter().map(|e| Lang::En.pick(e.title)).collect::<Vec<_>>();
+        let english = |query| {
+            find(query, Lang::En)
+                .iter()
+                .map(|e| Lang::En.pick(e.title))
+                .collect::<Vec<_>>()
+        };
         assert_eq!(english("brightness"), ["Screen brightness"]);
         assert_eq!(english("about"), ["About phone"]);
         assert_eq!(english("wi-fi"), ["Wi-Fi"]);
         let traditional = find("設定", Lang::Hant);
-        assert_eq!(traditional.first().map(|e| Lang::Hant.pick(e.title)), Some("設定"));
-        assert!(find("设置", Lang::Hant).is_empty(), "the simplified title belongs to the other script");
+        assert_eq!(
+            traditional.first().map(|e| Lang::Hant.pick(e.title)),
+            Some("設定")
+        );
+        assert!(
+            find("设置", Lang::Hant).is_empty(),
+            "the simplified title belongs to the other script"
+        );
     }
 
     #[test]
     fn a_language_answers_to_its_own_keys_and_the_english_ones() {
-        assert!(find("beifen", Lang::En).is_empty(), "pinyin is Chinese's own");
+        assert!(
+            find("beifen", Lang::En).is_empty(),
+            "pinyin is Chinese's own"
+        );
         for l in Lang::ALL {
             let found: Vec<Screen> = find("sideload", l).iter().map(|e| e.screen).collect();
-            assert_eq!(found, [Screen::Install], "{l:?} finds installing from a computer by the name every language borrows");
+            assert_eq!(
+                found,
+                [Screen::Install],
+                "{l:?} finds installing from a computer by the name every language borrows"
+            );
         }
     }
 
@@ -211,13 +342,22 @@ mod tests {
         assert_eq!(typed("İptal Işık"), "iptal isik", "Turkish's two letters I");
         assert_eq!(typed("Tiếng Việt"), "tieng viet");
         assert_eq!(typed("Straße"), "strasse");
-        assert_eq!(typed("Настройки"), "настройки", "letters the keyboard lacks stay themselves");
+        assert_eq!(
+            typed("Настройки"),
+            "настройки",
+            "letters the keyboard lacks stay themselves"
+        );
         assert_eq!(typed("設定"), "設定");
         for l in Lang::ALL {
             for e in ENTRIES {
                 let title = typed(l.pick(e.title));
                 let found = find(&title, l);
-                assert!(found.iter().any(|f| f.screen == e.screen && l.pick(f.title) == l.pick(e.title)), "{l:?} finds {title:?} by its own title");
+                assert!(
+                    found
+                        .iter()
+                        .any(|f| f.screen == e.screen && l.pick(f.title) == l.pick(e.title)),
+                    "{l:?} finds {title:?} by its own title"
+                );
             }
         }
     }
@@ -227,8 +367,15 @@ mod tests {
         for l in Lang::ALL {
             for e in ENTRIES {
                 let keys = l.pick(e.keys);
-                assert!(keys.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == ' '), "{l:?} gives {keys:?}");
-                assert!(!keys.starts_with(' ') && !keys.ends_with(' ') && !keys.contains("  "), "{l:?} gives {keys:?}");
+                assert!(
+                    keys.chars()
+                        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == ' '),
+                    "{l:?} gives {keys:?}"
+                );
+                assert!(
+                    !keys.starts_with(' ') && !keys.ends_with(' ') && !keys.contains("  "),
+                    "{l:?} gives {keys:?}"
+                );
             }
         }
     }

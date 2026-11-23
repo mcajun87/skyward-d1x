@@ -4,11 +4,12 @@
 //! time, so whoever reads the file sees one package even if the copy it
 //! comes from changes underneath.
 
-use crate::adb::{Connection, Link, Offer, MAX_BLOCKS};
-use anyhow::{anyhow, Context, Result};
+use crate::adb::{Connection, Link, MAX_BLOCKS, Offer};
+use anyhow::{Context, Result, anyhow};
 use polyfuse_kernel::{
-    fuse_attr, fuse_attr_out, fuse_entry_out, fuse_in_header, fuse_init_in, fuse_init_out, fuse_opcode, fuse_open_out,
-    fuse_out_header, fuse_read_in, FUSE_COMPAT_22_INIT_OUT_SIZE, FUSE_KERNEL_MINOR_VERSION, FUSE_KERNEL_VERSION,
+    FUSE_COMPAT_22_INIT_OUT_SIZE, FUSE_KERNEL_MINOR_VERSION, FUSE_KERNEL_VERSION, fuse_attr,
+    fuse_attr_out, fuse_entry_out, fuse_in_header, fuse_init_in, fuse_init_out, fuse_opcode,
+    fuse_open_out, fuse_out_header, fuse_read_in,
 };
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -89,15 +90,26 @@ impl LocalFile {
     /// it is served in.
     pub fn open(path: &Path) -> Result<(LocalFile, Offer)> {
         let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
-        let size = file.metadata().with_context(|| format!("look at {}", path.display()))?.len();
+        let size = file
+            .metadata()
+            .with_context(|| format!("look at {}", path.display()))?
+            .len();
         let block_size = file_block(size);
-        Ok((LocalFile { file, block_size: u64::from(block_size) }, Offer { size, block_size }))
+        Ok((
+            LocalFile {
+                file,
+                block_size: u64::from(block_size),
+            },
+            Offer { size, block_size },
+        ))
     }
 }
 
 impl Source for LocalFile {
     fn read_block(&mut self, index: u64, out: &mut [u8]) -> Result<(), String> {
-        self.file.read_exact_at(out, index * self.block_size).map_err(|e| e.to_string())
+        self.file
+            .read_exact_at(out, index * self.block_size)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -130,12 +142,20 @@ struct Part {
 
 impl Followed {
     fn new(offer: Offer) -> Followed {
-        let part = Part { block_size: u64::from(offer.block_size), start: 0, end: 0, reached: vec![false; offer.blocks() as usize], read: 0 };
+        let part = Part {
+            block_size: u64::from(offer.block_size),
+            start: 0,
+            end: 0,
+            reached: vec![false; offer.blocks() as usize],
+            read: 0,
+        };
         Followed(Arc::new(Mutex::new(part)))
     }
 
     fn part(&self) -> MutexGuard<'_, Part> {
-        self.0.lock().expect("nothing panics while the part followed is held")
+        self.0
+            .lock()
+            .expect("nothing panics while the part followed is held")
     }
 
     /// Follow the `len` bytes of the package from `start`, from now on.
@@ -156,7 +176,9 @@ impl Followed {
     fn reach(&self, index: u64) {
         let mut part = self.part();
         // A block past the package's end holds none of it.
-        let Some(reached) = part.reached.get_mut(index as usize) else { return };
+        let Some(reached) = part.reached.get_mut(index as usize) else {
+            return;
+        };
         if std::mem::replace(reached, true) {
             return;
         }
@@ -202,26 +224,37 @@ impl Server {
     }
 
     pub fn handle(&mut self, request: &[u8], fetch: &mut Fetch) -> Result<Handled> {
-        let (header, body) =
-            fuse_in_header::read_from_prefix(request).map_err(|_| anyhow!("a request of {} bytes", request.len()))?;
+        let (header, body) = fuse_in_header::read_from_prefix(request)
+            .map_err(|_| anyhow!("a request of {} bytes", request.len()))?;
         let unique = header.unique;
-        let Ok(opcode) = fuse_opcode::try_from(header.opcode) else { return Ok(Handled::Reply(error(unique, libc::ENOSYS))) };
+        let Ok(opcode) = fuse_opcode::try_from(header.opcode) else {
+            return Ok(Handled::Reply(error(unique, libc::ENOSYS)));
+        };
         Ok(match opcode {
             fuse_opcode::FUSE_INIT => {
-                let (init, _) = fuse_init_in::read_from_prefix(body).map_err(|_| anyhow!("a short INIT"))?;
+                let (init, _) =
+                    fuse_init_in::read_from_prefix(body).map_err(|_| anyhow!("a short INIT"))?;
                 Handled::Reply(self.init(unique, &init))
             }
             fuse_opcode::FUSE_LOOKUP => {
                 let name = body.split(|&b| b == 0).next().unwrap_or_default();
                 match (header.nodeid, name) {
-                    (ROOT_ID, b"package.zip") => Handled::Reply(reply(unique, self.entry(PACKAGE_ID).as_bytes())),
-                    (ROOT_ID, b"exit") => Handled::Exit(reply(unique, self.entry(EXIT_ID).as_bytes())),
+                    (ROOT_ID, b"package.zip") => {
+                        Handled::Reply(reply(unique, self.entry(PACKAGE_ID).as_bytes()))
+                    }
+                    (ROOT_ID, b"exit") => {
+                        Handled::Exit(reply(unique, self.entry(EXIT_ID).as_bytes()))
+                    }
                     _ => Handled::Reply(error(unique, libc::ENOENT)),
                 }
             }
             fuse_opcode::FUSE_GETATTR => match self.attr(header.nodeid) {
                 Some(attr) => {
-                    let out = fuse_attr_out { attr_valid: VALID, attr, ..Default::default() };
+                    let out = fuse_attr_out {
+                        attr_valid: VALID,
+                        attr,
+                        ..Default::default()
+                    };
                     let r = reply(unique, out.as_bytes());
                     if header.nodeid == EXIT_ID {
                         Handled::Exit(r)
@@ -240,12 +273,17 @@ impl Server {
                 if header.nodeid != PACKAGE_ID {
                     return Ok(Handled::Reply(error(unique, libc::ENOENT)));
                 }
-                let (read, _) = fuse_read_in::read_from_prefix(body).map_err(|_| anyhow!("a short READ"))?;
+                let (read, _) =
+                    fuse_read_in::read_from_prefix(body).map_err(|_| anyhow!("a short READ"))?;
                 Handled::Reply(self.read(unique, read.offset, read.size as usize, fetch))
             }
-            fuse_opcode::FUSE_FLUSH | fuse_opcode::FUSE_RELEASE => Handled::Reply(reply(unique, &[])),
+            fuse_opcode::FUSE_FLUSH | fuse_opcode::FUSE_RELEASE => {
+                Handled::Reply(reply(unique, &[]))
+            }
             fuse_opcode::FUSE_DESTROY => Handled::Exit(reply(unique, &[])),
-            fuse_opcode::FUSE_FORGET | fuse_opcode::FUSE_BATCH_FORGET | fuse_opcode::FUSE_INTERRUPT => Handled::Silent,
+            fuse_opcode::FUSE_FORGET
+            | fuse_opcode::FUSE_BATCH_FORGET
+            | fuse_opcode::FUSE_INTERRUPT => Handled::Silent,
             _ => Handled::Reply(error(unique, libc::ENOSYS)),
         })
     }
@@ -263,7 +301,11 @@ impl Server {
             ..Default::default()
         };
         // Kernels before 7.23 take the reply's first fields only.
-        let len = if init.minor <= 22 { FUSE_COMPAT_22_INIT_OUT_SIZE } else { size_of::<fuse_init_out>() };
+        let len = if init.minor <= 22 {
+            FUSE_COMPAT_22_INIT_OUT_SIZE
+        } else {
+            size_of::<fuse_init_out>()
+        };
         reply(unique, &out.as_bytes()[..len])
     }
 
@@ -274,12 +316,27 @@ impl Server {
             EXIT_ID => (0, S_IFREG),
             _ => return None,
         };
-        Some(fuse_attr { ino: node, size, blocks: size.div_ceil(512), mode, nlink: 1, blksize: 4096, ..Default::default() })
+        Some(fuse_attr {
+            ino: node,
+            size,
+            blocks: size.div_ceil(512),
+            mode,
+            nlink: 1,
+            blksize: 4096,
+            ..Default::default()
+        })
     }
 
     fn entry(&self, node: u64) -> fuse_entry_out {
         let attr = self.attr(node).expect("entries are for nodes that exist");
-        fuse_entry_out { nodeid: node, generation: node, entry_valid: VALID, attr_valid: VALID, attr, ..Default::default() }
+        fuse_entry_out {
+            nodeid: node,
+            generation: node,
+            entry_valid: VALID,
+            attr_valid: VALID,
+            attr,
+            ..Default::default()
+        }
     }
 
     /// `size` bytes from `offset`, zeros past the end of the package.
@@ -330,7 +387,11 @@ impl Server {
 
 fn reply(unique: u64, body: &[u8]) -> Vec<u8> {
     let len = size_of::<fuse_out_header>() + body.len();
-    let header = fuse_out_header { len: len as u32, error: 0, unique };
+    let header = fuse_out_header {
+        len: len as u32,
+        error: 0,
+        unique,
+    };
     let mut out = Vec::with_capacity(len);
     out.extend_from_slice(header.as_bytes());
     out.extend_from_slice(body);
@@ -338,15 +399,21 @@ fn reply(unique: u64, body: &[u8]) -> Vec<u8> {
 }
 
 fn error(unique: u64, errno: i32) -> Vec<u8> {
-    fuse_out_header { len: size_of::<fuse_out_header>() as u32, error: -errno, unique }.as_bytes().to_vec()
+    fuse_out_header {
+        len: size_of::<fuse_out_header>() as u32,
+        error: -errno,
+        unique,
+    }
+    .as_bytes()
+    .to_vec()
 }
 
 #[cfg(target_os = "android")]
-pub use device::{mount, Mount, Mounted};
+pub use device::{Mount, Mounted, mount};
 
 #[cfg(target_os = "android")]
 mod device {
-    use super::{Fault, Followed, Handled, Server, Source, EXIT, MOUNT_POINT};
+    use super::{EXIT, Fault, Followed, Handled, MOUNT_POINT, Server, Source};
     use crate::adb::Offer;
     use anyhow::{Context, Result};
     use std::ffi::CString;
@@ -376,7 +443,10 @@ mod device {
     /// Mount the package `offer` describes at /sideload, read-only.
     pub fn mount(offer: Offer) -> Result<Mounted> {
         let point = Path::new(MOUNT_POINT);
-        if !point.try_exists().with_context(|| format!("look for {MOUNT_POINT}"))? {
+        if !point
+            .try_exists()
+            .with_context(|| format!("look for {MOUNT_POINT}"))?
+        {
             fs::create_dir(point).with_context(|| format!("create {MOUNT_POINT}"))?;
         }
         // An earlier recovery that died while installing leaves it mounted.
@@ -394,10 +464,23 @@ mod device {
             dev.as_raw_fd(),
             offer.block_size
         );
-        let (source, target, kind, data) =
-            (CString::new("/dev/fuse")?, CString::new(MOUNT_POINT)?, CString::new("fuse")?, CString::new(options)?);
+        let (source, target, kind, data) = (
+            CString::new("/dev/fuse")?,
+            CString::new(MOUNT_POINT)?,
+            CString::new("fuse")?,
+            CString::new(options)?,
+        );
         let flags = libc::MS_NOSUID | libc::MS_NODEV | libc::MS_RDONLY | libc::MS_NOEXEC;
-        if unsafe { libc::mount(source.as_ptr(), target.as_ptr(), kind.as_ptr(), flags, data.as_ptr().cast()) } != 0 {
+        if unsafe {
+            libc::mount(
+                source.as_ptr(),
+                target.as_ptr(),
+                kind.as_ptr(),
+                flags,
+                data.as_ptr().cast(),
+            )
+        } != 0
+        {
             return Err(std::io::Error::last_os_error()).context("mount the package at /sideload");
         }
         Ok(Mounted { dev, offer })
@@ -478,7 +561,9 @@ mod device {
     /// the connection is gone and the lookup fails.
     fn stop() -> Result<()> {
         match fs::symlink_metadata(EXIT) {
-            Err(e) if e.raw_os_error() != Some(libc::ENOTCONN) => Err(e).context("stop the FUSE server"),
+            Err(e) if e.raw_os_error() != Some(libc::ENOTCONN) => {
+                Err(e).context("stop the FUSE server")
+            }
             _ => Ok(()),
         }
     }
@@ -487,13 +572,13 @@ mod device {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::package::{identify, Package};
+    use crate::package::{Package, identify};
     use polyfuse_kernel::fuse_open_in;
     use std::cell::Cell;
     use std::io::{Cursor, Read, Seek, SeekFrom, Write};
     use zerocopy::Immutable;
-    use zip::write::SimpleFileOptions;
     use zip::CompressionMethod;
+    use zip::write::SimpleFileOptions;
 
     fn request<T: IntoBytes + Immutable>(opcode: fuse_opcode, node: u64, body: &T) -> Vec<u8> {
         request_raw(opcode, node, body.as_bytes())
@@ -511,12 +596,22 @@ mod tests {
     }
 
     fn read_request(offset: u64, size: u32) -> Vec<u8> {
-        request(fuse_opcode::FUSE_READ, PACKAGE_ID, &fuse_read_in { offset, size, ..Default::default() })
+        request(
+            fuse_opcode::FUSE_READ,
+            PACKAGE_ID,
+            &fuse_read_in {
+                offset,
+                size,
+                ..Default::default()
+            },
+        )
     }
 
     /// The reply's header and body.
     fn split(handled: Handled) -> (fuse_out_header, Vec<u8>) {
-        let Handled::Reply(bytes) = handled else { panic!("a reply") };
+        let Handled::Reply(bytes) = handled else {
+            panic!("a reply")
+        };
         let (header, body) = fuse_out_header::read_from_prefix(&bytes).unwrap();
         assert_eq!(header.len as usize, bytes.len());
         assert_eq!(header.unique, 7);
@@ -529,11 +624,17 @@ mod tests {
     }
 
     fn server_for(package: &[u8]) -> Server {
-        Server::new(Offer { size: package.len() as u64, block_size: 4096 })
+        Server::new(Offer {
+            size: package.len() as u64,
+            block_size: 4096,
+        })
     }
 
     /// Fetching the blocks of `package`, counting the fetches.
-    fn fetch_from<'a>(package: &'a [u8], fetches: &'a Cell<u32>) -> impl FnMut(u64, &mut [u8]) -> Result<(), String> + 'a {
+    fn fetch_from<'a>(
+        package: &'a [u8],
+        fetches: &'a Cell<u32>,
+    ) -> impl FnMut(u64, &mut [u8]) -> Result<(), String> + 'a {
         move |index, out| {
             fetches.set(fetches.get() + 1);
             let start = index as usize * 4096;
@@ -546,19 +647,60 @@ mod tests {
     fn the_package_is_the_one_file_and_exit_stops_serving() {
         let (pkg, fetches) = (package(), Cell::new(0));
         let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
-        let (h, body) = split(server.handle(&request_raw(fuse_opcode::FUSE_LOOKUP, ROOT_ID, b"package.zip\0"), &mut fetch).unwrap());
+        let (h, body) = split(
+            server
+                .handle(
+                    &request_raw(fuse_opcode::FUSE_LOOKUP, ROOT_ID, b"package.zip\0"),
+                    &mut fetch,
+                )
+                .unwrap(),
+        );
         assert_eq!(h.error, 0);
         let (entry, _) = fuse_entry_out::read_from_prefix(&body).unwrap();
-        assert_eq!((entry.nodeid, entry.attr.size, entry.attr.mode), (PACKAGE_ID, 10_240, S_IFREG | 0o444));
-        let (h, _) = split(server.handle(&request_raw(fuse_opcode::FUSE_LOOKUP, ROOT_ID, b"other.zip\0"), &mut fetch).unwrap());
+        assert_eq!(
+            (entry.nodeid, entry.attr.size, entry.attr.mode),
+            (PACKAGE_ID, 10_240, S_IFREG | 0o444)
+        );
+        let (h, _) = split(
+            server
+                .handle(
+                    &request_raw(fuse_opcode::FUSE_LOOKUP, ROOT_ID, b"other.zip\0"),
+                    &mut fetch,
+                )
+                .unwrap(),
+        );
         assert_eq!(h.error, -libc::ENOENT);
-        let (h, _) = split(server.handle(&request(fuse_opcode::FUSE_OPEN, PACKAGE_ID, &fuse_open_in::default()), &mut fetch).unwrap());
+        let (h, _) = split(
+            server
+                .handle(
+                    &request(fuse_opcode::FUSE_OPEN, PACKAGE_ID, &fuse_open_in::default()),
+                    &mut fetch,
+                )
+                .unwrap(),
+        );
         assert_eq!(h.error, 0);
-        let (h, _) = split(server.handle(&request(fuse_opcode::FUSE_OPEN, EXIT_ID, &fuse_open_in::default()), &mut fetch).unwrap());
+        let (h, _) = split(
+            server
+                .handle(
+                    &request(fuse_opcode::FUSE_OPEN, EXIT_ID, &fuse_open_in::default()),
+                    &mut fetch,
+                )
+                .unwrap(),
+        );
         assert_eq!(h.error, -libc::EPERM);
-        let exit = server.handle(&request_raw(fuse_opcode::FUSE_LOOKUP, ROOT_ID, b"exit\0"), &mut fetch).unwrap();
+        let exit = server
+            .handle(
+                &request_raw(fuse_opcode::FUSE_LOOKUP, ROOT_ID, b"exit\0"),
+                &mut fetch,
+            )
+            .unwrap();
         assert!(matches!(exit, Handled::Exit(_)));
-        let forget = server.handle(&request_raw(fuse_opcode::FUSE_FORGET, PACKAGE_ID, &[0; 8]), &mut fetch).unwrap();
+        let forget = server
+            .handle(
+                &request_raw(fuse_opcode::FUSE_FORGET, PACKAGE_ID, &[0; 8]),
+                &mut fetch,
+            )
+            .unwrap();
         assert_eq!(forget, Handled::Silent);
     }
 
@@ -566,16 +708,46 @@ mod tests {
     fn init_answers_with_the_older_of_both_versions() {
         let (pkg, fetches) = (package(), Cell::new(0));
         let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
-        let init = fuse_init_in { major: 7, minor: 38, max_readahead: 131_072, flags: 0 };
-        let (h, body) = split(server.handle(&request(fuse_opcode::FUSE_INIT, 0, &init), &mut fetch).unwrap());
+        let init = fuse_init_in {
+            major: 7,
+            minor: 38,
+            max_readahead: 131_072,
+            flags: 0,
+        };
+        let (h, body) = split(
+            server
+                .handle(&request(fuse_opcode::FUSE_INIT, 0, &init), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(h.error, 0);
         let (out, _) = fuse_init_out::read_from_prefix(&body).unwrap();
-        assert_eq!((out.major, out.minor, out.max_readahead), (7, FUSE_KERNEL_MINOR_VERSION, 131_072));
-        let old = fuse_init_in { major: 7, minor: 22, max_readahead: 0, flags: 0 };
-        let (_, body) = split(server.handle(&request(fuse_opcode::FUSE_INIT, 0, &old), &mut fetch).unwrap());
+        assert_eq!(
+            (out.major, out.minor, out.max_readahead),
+            (7, FUSE_KERNEL_MINOR_VERSION, 131_072)
+        );
+        let old = fuse_init_in {
+            major: 7,
+            minor: 22,
+            max_readahead: 0,
+            flags: 0,
+        };
+        let (_, body) = split(
+            server
+                .handle(&request(fuse_opcode::FUSE_INIT, 0, &old), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(body.len(), FUSE_COMPAT_22_INIT_OUT_SIZE);
-        let wrong = fuse_init_in { major: 6, minor: 0, max_readahead: 0, flags: 0 };
-        let (h, _) = split(server.handle(&request(fuse_opcode::FUSE_INIT, 0, &wrong), &mut fetch).unwrap());
+        let wrong = fuse_init_in {
+            major: 6,
+            minor: 0,
+            max_readahead: 0,
+            flags: 0,
+        };
+        let (h, _) = split(
+            server
+                .handle(&request(fuse_opcode::FUSE_INIT, 0, &wrong), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(h.error, -libc::EPROTO);
     }
 
@@ -583,12 +755,24 @@ mod tests {
     fn reads_span_blocks_and_run_on_in_zeros_past_the_end() {
         let (pkg, fetches) = (package(), Cell::new(0));
         let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
-        let (_, body) = split(server.handle(&read_request(4000, 4096), &mut fetch).unwrap());
+        let (_, body) = split(
+            server
+                .handle(&read_request(4000, 4096), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(body, pkg[4000..8096]);
-        let (_, body) = split(server.handle(&read_request(8192, 4096), &mut fetch).unwrap());
+        let (_, body) = split(
+            server
+                .handle(&read_request(8192, 4096), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(&body[..2048], &pkg[8192..]);
         assert!(body[2048..].iter().all(|&b| b == 0));
-        let (_, body) = split(server.handle(&read_request(12_288, 100), &mut fetch).unwrap());
+        let (_, body) = split(
+            server
+                .handle(&read_request(12_288, 100), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(body, vec![0; 100]);
         // Blocks 0, 1 and 2; the block past the end needs no fetch.
         assert_eq!(fetches.get(), 3);
@@ -599,22 +783,50 @@ mod tests {
         let (pkg, fetches) = (package(), Cell::new(0));
         let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
         let followed = server.followed();
-        server.handle(&read_request(8192, 2048), &mut fetch).unwrap();
+        server
+            .handle(&read_request(8192, 2048), &mut fetch)
+            .unwrap();
         server.handle(&read_request(0, 4096), &mut fetch).unwrap();
         assert_eq!(followed.read(), 0, "no part is named yet");
         // 4000 bytes from inside the second block to inside the third.
         followed.follow(5000, 4000);
-        assert_eq!(followed.read(), 0, "what was read before the part was named is not counted");
+        assert_eq!(
+            followed.read(),
+            0,
+            "what was read before the part was named is not counted"
+        );
         server.handle(&read_request(0, 4096), &mut fetch).unwrap();
-        assert_eq!(followed.read(), 0, "the block before the part holds none of it");
+        assert_eq!(
+            followed.read(),
+            0,
+            "the block before the part holds none of it"
+        );
         server.handle(&read_request(4096, 100), &mut fetch).unwrap();
-        assert_eq!(followed.read(), 3192, "the second block, from the part's start");
-        server.handle(&read_request(6000, 2000), &mut fetch).unwrap();
+        assert_eq!(
+            followed.read(),
+            3192,
+            "the second block, from the part's start"
+        );
+        server
+            .handle(&read_request(6000, 2000), &mut fetch)
+            .unwrap();
         assert_eq!(followed.read(), 3192, "a block read again adds nothing");
-        server.handle(&read_request(8192, 2048), &mut fetch).unwrap();
-        assert_eq!(followed.read(), 4000, "the third block, read before the part was named, counts now, up to the part's end");
-        server.handle(&read_request(12_288, 100), &mut fetch).unwrap();
-        assert_eq!(followed.read(), 4000, "past the package's end there is none of the part");
+        server
+            .handle(&read_request(8192, 2048), &mut fetch)
+            .unwrap();
+        assert_eq!(
+            followed.read(),
+            4000,
+            "the third block, read before the part was named, counts now, up to the part's end"
+        );
+        server
+            .handle(&read_request(12_288, 100), &mut fetch)
+            .unwrap();
+        assert_eq!(
+            followed.read(),
+            4000,
+            "past the package's end there is none of the part"
+        );
     }
 
     #[test]
@@ -623,12 +835,20 @@ mod tests {
         let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
         let followed = server.followed();
         followed.follow(0, 10_240);
-        server.handle(&read_request(4000, 4096), &mut fetch).unwrap();
+        server
+            .handle(&read_request(4000, 4096), &mut fetch)
+            .unwrap();
         assert_eq!(followed.read(), 8192);
         followed.follow(8192, 2048);
         assert_eq!(followed.read(), 0);
-        server.handle(&read_request(8192, 4096), &mut fetch).unwrap();
-        assert_eq!(followed.read(), 2048, "the short last block is all of the part");
+        server
+            .handle(&read_request(8192, 4096), &mut fetch)
+            .unwrap();
+        assert_eq!(
+            followed.read(),
+            2048,
+            "the short last block is all of the part"
+        );
     }
 
     /// The package as a program reads it through the filesystem: each read
@@ -648,7 +868,11 @@ mod tests {
             }
             let fetches = Cell::new(0);
             let mut fetch = fetch_from(self.package, &fetches);
-            let (header, body) = split(self.server.handle(&read_request(self.at, n as u32), &mut fetch).unwrap());
+            let (header, body) = split(
+                self.server
+                    .handle(&read_request(self.at, n as u32), &mut fetch)
+                    .unwrap(),
+            );
             assert_eq!(header.error, 0);
             buf[..n].copy_from_slice(&body);
             self.at += n as u64;
@@ -674,42 +898,71 @@ mod tests {
         let entries: [(&str, &[u8]); 3] = [
             ("payload.bin", payload),
             ("payload_properties.txt", b"FILE_SIZE=40000\n"),
-            ("META-INF/com/android/metadata", b"ota-type=AB\npre-device=ishtar\n"),
+            (
+                "META-INF/com/android/metadata",
+                b"ota-type=AB\npre-device=ishtar\n",
+            ),
         ];
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (name, data) in entries {
-            zip.start_file(name, SimpleFileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
+            zip.start_file(
+                name,
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+            )
+            .unwrap();
             zip.write_all(data).unwrap();
         }
         zip.finish().unwrap().into_inner()
     }
 
     #[test]
-    fn an_update_s_payload_is_followed_from_nothing_to_all_of_it_whatever_else_of_the_zip_was_read() {
+    fn an_update_s_payload_is_followed_from_nothing_to_all_of_it_whatever_else_of_the_zip_was_read()
+    {
         let payload: Vec<u8> = (0..40_000u32).map(|i| (i % 251) as u8).collect();
         let pkg = update_package(&payload);
         let mut server = server_for(&pkg);
         let followed = server.followed();
         // Telling what the package is reads its start and the zip's
         // directory, at its end, before anything is known of the payload.
-        let whole = Through { server: &mut server, package: &pkg, at: 0 };
-        let Package::Update(update) = identify(whole).unwrap() else { panic!("an update package") };
+        let whole = Through {
+            server: &mut server,
+            package: &pkg,
+            at: 0,
+        };
+        let Package::Update(update) = identify(whole).unwrap() else {
+            panic!("an update package")
+        };
         assert_eq!(update.payload_size, 40_000);
         followed.follow(update.payload_offset, update.payload_size);
-        assert_eq!(followed.read(), 0, "none of the payload has been read for the update yet");
+        assert_eq!(
+            followed.read(),
+            0,
+            "none of the payload has been read for the update yet"
+        );
         // The program that installs the update reads the payload from its
         // start to its end.
-        let mut through = Through { server: &mut server, package: &pkg, at: update.payload_offset };
+        let mut through = Through {
+            server: &mut server,
+            package: &pkg,
+            at: update.payload_offset,
+        };
         let (mut taken, mut chunk) = (0u64, vec![0u8; 3000]);
         while taken < update.payload_size {
             let want = (update.payload_size - taken).min(chunk.len() as u64) as usize;
             through.read_exact(&mut chunk[..want]).unwrap();
             taken += want as u64;
             let read = followed.read();
-            assert!((taken..=taken + 4096).contains(&read), "{read} of the payload counted with {taken} taken");
+            assert!(
+                (taken..=taken + 4096).contains(&read),
+                "{read} of the payload counted with {taken} taken"
+            );
             assert!(read <= update.payload_size);
         }
-        assert_eq!(followed.read(), update.payload_size, "all of the payload, and no more");
+        assert_eq!(
+            followed.read(),
+            update.payload_size,
+            "all of the payload, and no more"
+        );
         // The zip's directory read again, as a program closing the file may.
         through.seek(SeekFrom::End(-64)).unwrap();
         through.read_exact(&mut chunk[..64]).unwrap();
@@ -722,7 +975,13 @@ mod tests {
         let mut server = server_for(&pkg);
         let serve = |server: &mut Server, pkg: &[u8], offset| {
             let mut fetch = fetch_from(pkg, &fetches);
-            split(server.handle(&read_request(offset, 4096), &mut fetch).unwrap()).0.error
+            split(
+                server
+                    .handle(&read_request(offset, 4096), &mut fetch)
+                    .unwrap(),
+            )
+            .0
+            .error
         };
         assert_eq!(serve(&mut server, &pkg, 0), 0);
         assert_eq!(serve(&mut server, &pkg, 4096), 0);
@@ -734,19 +993,35 @@ mod tests {
 
     #[test]
     fn a_failed_fetch_fails_the_read() {
-        let offer = Offer { size: 10_240, block_size: 4096 };
+        let offer = Offer {
+            size: 10_240,
+            block_size: 4096,
+        };
         let mut server = Server::new(offer);
-        let mut fetch = |_: u64, _: &mut [u8]| Err("USB: the computer closed the stream".to_string());
+        let mut fetch =
+            |_: u64, _: &mut [u8]| Err("USB: the computer closed the stream".to_string());
         let (h, _) = split(server.handle(&read_request(0, 4096), &mut fetch).unwrap());
         assert_eq!(h.error, -libc::EIO);
-        assert_eq!(server.fault(), Some(&Fault::Transfer("USB: the computer closed the stream".into())));
+        assert_eq!(
+            server.fault(),
+            Some(&Fault::Transfer(
+                "USB: the computer closed the stream".into()
+            ))
+        );
     }
 
     #[test]
     fn unknown_and_unsupported_requests_get_enosys() {
         let (pkg, fetches) = (package(), Cell::new(0));
         let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
-        let (h, _) = split(server.handle(&request_raw(fuse_opcode::FUSE_STATFS, ROOT_ID, &[]), &mut fetch).unwrap());
+        let (h, _) = split(
+            server
+                .handle(
+                    &request_raw(fuse_opcode::FUSE_STATFS, ROOT_ID, &[]),
+                    &mut fetch,
+                )
+                .unwrap(),
+        );
         assert_eq!(h.error, -libc::ENOSYS);
         let mut odd = request_raw(fuse_opcode::FUSE_STATFS, ROOT_ID, &[]);
         odd[4..8].copy_from_slice(&999u32.to_le_bytes());
@@ -762,15 +1037,29 @@ mod tests {
         let content: Vec<u8> = (0..150_000u32).map(|i| (i % 251) as u8).collect();
         std::fs::write(&path, &content).unwrap();
         let (mut file, offer) = LocalFile::open(&path).unwrap();
-        assert_eq!(offer, Offer { size: 150_000, block_size: FILE_BLOCK });
+        assert_eq!(
+            offer,
+            Offer {
+                size: 150_000,
+                block_size: FILE_BLOCK
+            }
+        );
         assert!(offer.check().is_ok());
         let mut server = Server::new(offer);
         let mut fetch = |index: u64, out: &mut [u8]| file.read_block(index, out);
         // Across the first block into the second, and the short last one.
-        let (h, body) = split(server.handle(&read_request(65_000, 1_000), &mut fetch).unwrap());
+        let (h, body) = split(
+            server
+                .handle(&read_request(65_000, 1_000), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(h.error, 0);
         assert_eq!(body, content[65_000..66_000]);
-        let (_, body) = split(server.handle(&read_request(131_072, 65_536), &mut fetch).unwrap());
+        let (_, body) = split(
+            server
+                .handle(&read_request(131_072, 65_536), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(body[..18_928], content[131_072..]);
         assert!(body[18_928..].iter().all(|&b| b == 0), "zeros past the end");
     }
@@ -781,10 +1070,19 @@ mod tests {
         let path = dir.path().join("update.zip");
         std::fs::write(&path, vec![7u8; 200_000]).unwrap();
         let (mut file, offer) = LocalFile::open(&path).unwrap();
-        std::fs::File::options().write(true).open(&path).unwrap().set_len(70_000).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(70_000)
+            .unwrap();
         let mut server = Server::new(offer);
         let mut fetch = |index: u64, out: &mut [u8]| file.read_block(index, out);
-        let (h, _) = split(server.handle(&read_request(65_536, 4096), &mut fetch).unwrap());
+        let (h, _) = split(
+            server
+                .handle(&read_request(65_536, 4096), &mut fetch)
+                .unwrap(),
+        );
         assert_eq!(h.error, -libc::EIO);
         assert!(matches!(server.fault(), Some(Fault::Transfer(_))));
     }
@@ -792,11 +1090,22 @@ mod tests {
     #[test]
     fn a_file_too_big_for_the_usual_blocks_gets_bigger_ones() {
         assert_eq!(file_block(0), FILE_BLOCK);
-        assert_eq!(file_block(7_103_041_280), FILE_BLOCK, "a whole system update");
-        assert_eq!(file_block(16 << 30), FILE_BLOCK, "the most the usual blocks hold");
+        assert_eq!(
+            file_block(7_103_041_280),
+            FILE_BLOCK,
+            "a whole system update"
+        );
+        assert_eq!(
+            file_block(16 << 30),
+            FILE_BLOCK,
+            "the most the usual blocks hold"
+        );
         assert_eq!(file_block((16 << 30) + 1), 2 * FILE_BLOCK);
         let size = 100 << 30;
-        let offer = Offer { size, block_size: file_block(size) };
+        let offer = Offer {
+            size,
+            block_size: file_block(size),
+        };
         assert!(offer.check().is_ok());
     }
 }

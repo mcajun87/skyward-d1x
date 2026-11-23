@@ -7,8 +7,8 @@
 use anyhow::{Context, Result};
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
 /// The end events are told into.
@@ -20,7 +20,10 @@ pub struct Teller<E> {
 
 impl<E> Clone for Teller<E> {
     fn clone(&self) -> Teller<E> {
-        Teller { events: self.events.clone(), signal: self.signal.clone() }
+        Teller {
+            events: self.events.clone(),
+            signal: self.signal.clone(),
+        }
     }
 }
 
@@ -53,7 +56,14 @@ impl<E> Told<E> {
     /// The events since the last call.
     pub fn take(&self) -> Vec<E> {
         let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
+        while unsafe {
+            libc::read(
+                self.wake.as_raw_fd(),
+                drain.as_mut_ptr().cast(),
+                drain.len(),
+            )
+        } > 0
+        {}
         self.events.try_iter().collect()
     }
 }
@@ -63,7 +73,13 @@ impl<E> Told<E> {
 pub fn telling<E>() -> io::Result<(Teller<E>, Told<E>)> {
     let (wake, signal) = pipe()?;
     let (tx, events) = mpsc::channel();
-    Ok((Teller { events: tx, signal: Arc::new(signal) }, Told { events, wake }))
+    Ok((
+        Teller {
+            events: tx,
+            signal: Arc::new(signal),
+        },
+        Told { events, wake },
+    ))
 }
 
 /// A pipe neither end of which blocks or is kept by a program started
@@ -106,10 +122,21 @@ pub struct Worker<E> {
 impl<E: Send + 'static> Worker<E> {
     /// Run `work` on a thread named `name`; what it tells comes back as
     /// events.
-    pub fn start(name: &'static str, work: impl FnOnce(Teller<E>) + Send + 'static) -> Result<Worker<E>> {
-        let (teller, told) = telling().with_context(|| format!("make the {name} thread's wake pipe"))?;
-        let thread = thread::Builder::new().name(name.into()).spawn(move || work(teller)).with_context(|| format!("start the {name} thread"))?;
-        Ok(Worker { name, told, thread: Some(thread) })
+    pub fn start(
+        name: &'static str,
+        work: impl FnOnce(Teller<E>) + Send + 'static,
+    ) -> Result<Worker<E>> {
+        let (teller, told) =
+            telling().with_context(|| format!("make the {name} thread's wake pipe"))?;
+        let thread = thread::Builder::new()
+            .name(name.into())
+            .spawn(move || work(teller))
+            .with_context(|| format!("start the {name} thread"))?;
+        Ok(Worker {
+            name,
+            told,
+            thread: Some(thread),
+        })
     }
 }
 
@@ -149,7 +176,11 @@ mod tests {
 
     /// Whether `fd` is readable within `within`.
     fn readable(fd: RawFd, within: Duration) -> bool {
-        let mut waited = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        let mut waited = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
         let ready = unsafe { libc::poll(&mut waited, 1, within.as_millis() as libc::c_int) };
         assert!(ready >= 0, "{}", io::Error::last_os_error());
         ready == 1 && waited.revents & libc::POLLIN != 0
@@ -169,14 +200,23 @@ mod tests {
             gone.recv().unwrap();
         })
         .unwrap();
-        assert!(!readable(worker.fd(), Duration::ZERO), "nothing waits before anything is told");
+        assert!(
+            !readable(worker.fd(), Duration::ZERO),
+            "nothing waits before anything is told"
+        );
         assert!(worker.events().is_empty());
         assert!(!worker.ended());
         go.send(()).unwrap();
-        assert!(readable(worker.fd(), Duration::from_secs(10)), "the pipe wakes the loop");
+        assert!(
+            readable(worker.fd(), Duration::from_secs(10)),
+            "the pipe wakes the loop"
+        );
         told.recv().unwrap();
         assert_eq!(worker.events(), [0, 1, 2]);
-        assert!(!readable(worker.fd(), Duration::ZERO), "taking the events empties the pipe");
+        assert!(
+            !readable(worker.fd(), Duration::ZERO),
+            "taking the events empties the pipe"
+        );
         go.send(()).unwrap();
     }
 

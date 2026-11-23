@@ -71,7 +71,9 @@ pub struct Objects<C> {
 
 impl<C> Default for Objects<C> {
     fn default() -> Self {
-        Objects { served: Mutex::new((FIRST, HashMap::new())) }
+        Objects {
+            served: Mutex::new((FIRST, HashMap::new())),
+        }
     }
 }
 
@@ -89,7 +91,10 @@ impl<C> Objects<C> {
     }
 
     fn add(&self, object: Arc<dyn Object<C>>, kept: bool) -> u64 {
-        let mut served = self.served.lock().expect("nothing panics while the objects are held");
+        let mut served = self
+            .served
+            .lock()
+            .expect("nothing panics while the objects are held");
         let number = served.0;
         served.0 += 1;
         served.1.insert(number, Served { object, kept });
@@ -100,7 +105,10 @@ impl<C> Objects<C> {
     /// any more: one lent is told so and served no longer.
     pub fn let_go(&self, with: &C, number: u64) {
         let lent = {
-            let mut served = self.served.lock().expect("nothing panics while the objects are held");
+            let mut served = self
+                .served
+                .lock()
+                .expect("nothing panics while the objects are held");
             match served.1.get(&number) {
                 Some(s) if !s.kept => served.1.remove(&number),
                 _ => None,
@@ -113,7 +121,11 @@ impl<C> Objects<C> {
 
     /// Whether an object is served under `number`.
     pub fn serves(&self, number: u64) -> bool {
-        self.served.lock().expect("nothing panics while the objects are held").1.contains_key(&number)
+        self.served
+            .lock()
+            .expect("nothing panics while the objects are held")
+            .1
+            .contains_key(&number)
     }
 
     /// Answer the call of the method numbered `code` on the object
@@ -121,8 +133,16 @@ impl<C> Objects<C> {
     pub fn answer(&self, with: &C, number: u64, code: u32, data: &[u8]) -> Answer {
         // The object answers outside the table's lock: it may serve
         // another object while it does.
-        let found = self.served.lock().expect("nothing panics while the objects are held").1.get(&number).map(|s| s.object.clone());
-        let Some(object) = found else { return Answer::Unknown };
+        let found = self
+            .served
+            .lock()
+            .expect("nothing panics while the objects are held")
+            .1
+            .get(&number)
+            .map(|s| s.object.clone());
+        let Some(object) = found else {
+            return Answer::Unknown;
+        };
         let mut read = Reader::new(data);
         match code {
             PING => Answer::Reply(Parcel::default()),
@@ -194,11 +214,18 @@ mod tests {
             "0123abcd"
         }
 
-        fn call(&self, _with: &(), code: u32, read: &mut Reader) -> Result<Option<Parcel>, Refusal> {
+        fn call(
+            &self,
+            _with: &(),
+            code: u32,
+            read: &mut Reader,
+        ) -> Result<Option<Parcel>, Refusal> {
             if code != 1 {
                 return Ok(None);
             }
-            let n = read.i32().map_err(|e| Refusal::illegal_argument(e.to_string()))?;
+            let n = read
+                .i32()
+                .map_err(|e| Refusal::illegal_argument(e.to_string()))?;
             if n == 0 {
                 return Err(Refusal::service(5, "zero"));
             }
@@ -231,26 +258,66 @@ mod tests {
         assert_eq!(read.i32().unwrap(), 42);
         let refused = reply(objects.answer(&(), number, 1, call("a.b.IAdder", 0).bytes()));
         let e = status::ok(&mut Reader::new(refused.bytes())).unwrap_err();
-        assert_eq!(status::refused_with(&e), Some(5), "its own refusal goes back in the reply");
-        assert!(matches!(objects.answer(&(), number, 2, call("a.b.IAdder", 1).bytes()), Answer::Unknown), "no such method");
-        assert!(matches!(objects.answer(&(), number, 1, call("a.b.IOther", 1).bytes()), Answer::Unknown), "a call for another interface");
-        assert!(matches!(objects.answer(&(), number + 1, 1, call("a.b.IAdder", 1).bytes()), Answer::Unknown), "no such object");
+        assert_eq!(
+            status::refused_with(&e),
+            Some(5),
+            "its own refusal goes back in the reply"
+        );
+        assert!(
+            matches!(
+                objects.answer(&(), number, 2, call("a.b.IAdder", 1).bytes()),
+                Answer::Unknown
+            ),
+            "no such method"
+        );
+        assert!(
+            matches!(
+                objects.answer(&(), number, 1, call("a.b.IOther", 1).bytes()),
+                Answer::Unknown
+            ),
+            "a call for another interface"
+        );
+        assert!(
+            matches!(
+                objects.answer(&(), number + 1, 1, call("a.b.IAdder", 1).bytes()),
+                Answer::Unknown
+            ),
+            "no such object"
+        );
     }
 
     #[test]
     fn every_object_says_what_it_is_whatever_its_interface() {
         let objects = Objects::<()>::default();
         let number = objects.keep(Arc::new(Adder::default()));
-        assert!(reply(objects.answer(&(), number, PING, &[])).bytes().is_empty(), "it is there");
+        assert!(
+            reply(objects.answer(&(), number, PING, &[]))
+                .bytes()
+                .is_empty(),
+            "it is there"
+        );
         let named = reply(objects.answer(&(), number, INTERFACE, &[]));
         assert_eq!(Reader::new(named.bytes()).string().unwrap(), "a.b.IAdder");
         let pid = reply(objects.answer(&(), number, DEBUG_PID, &[]));
-        assert_eq!(Reader::new(pid.bytes()).i32().unwrap(), std::process::id() as i32);
-        let version = reply(objects.answer(&(), number, INTERFACE_VERSION, Parcel::call("a.b.IAdder").bytes()));
+        assert_eq!(
+            Reader::new(pid.bytes()).i32().unwrap(),
+            std::process::id() as i32
+        );
+        let version = reply(objects.answer(
+            &(),
+            number,
+            INTERFACE_VERSION,
+            Parcel::call("a.b.IAdder").bytes(),
+        ));
         let mut read = Reader::new(version.bytes());
         status::ok(&mut read).unwrap();
         assert_eq!(read.i32().unwrap(), 3);
-        let hash = reply(objects.answer(&(), number, INTERFACE_HASH, Parcel::call("a.b.IAdder").bytes()));
+        let hash = reply(objects.answer(
+            &(),
+            number,
+            INTERFACE_HASH,
+            Parcel::call("a.b.IAdder").bytes(),
+        ));
         let mut read = Reader::new(hash.bytes());
         status::ok(&mut read).unwrap();
         assert_eq!(read.string().unwrap(), "0123abcd");
@@ -261,14 +328,24 @@ mod tests {
         let objects = Objects::<()>::default();
         let (always, once) = (Arc::new(Adder::default()), Arc::new(Adder::default()));
         let (kept, lent) = (objects.keep(always.clone()), objects.lend(once.clone()));
-        assert!(kept != 0 && lent != 0 && kept != lent, "each under a number of its own, none under zero");
+        assert!(
+            kept != 0 && lent != 0 && kept != lent,
+            "each under a number of its own, none under zero"
+        );
         objects.let_go(&(), kept);
         objects.let_go(&(), lent);
         objects.let_go(&(), lent);
         assert!(objects.serves(kept));
         assert!(!objects.serves(lent));
-        assert!(matches!(objects.answer(&(), lent, PING, &[]), Answer::Unknown));
+        assert!(matches!(
+            objects.answer(&(), lent, PING, &[]),
+            Answer::Unknown
+        ));
         let told = |adder: &Adder| adder.0.load(std::sync::atomic::Ordering::Relaxed);
-        assert_eq!((told(&always), told(&once)), (0, 1), "the one lent is told once that it is let go");
+        assert_eq!(
+            (told(&always), told(&once)),
+            (0, 1),
+            "the one lent is told once that it is let go"
+        );
     }
 }

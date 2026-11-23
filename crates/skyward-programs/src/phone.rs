@@ -42,12 +42,27 @@ const DESCRIPTIONS: &str = "etc/vintf";
 /// The partitions whose descriptions tell of the phone's own services, and
 /// the property that names the build of the hardware each describes, where
 /// one partition serves several.
-pub(crate) const DESCRIBING: [(&str, &str); 2] = [("vendor", "ro.boot.product.vendor.sku"), ("odm", "ro.boot.product.hardware.sku")];
+pub(crate) const DESCRIBING: [(&str, &str); 2] = [
+    ("vendor", "ro.boot.product.vendor.sku"),
+    ("odm", "ro.boot.product.hardware.sku"),
+];
 
 /// What happens as every phone starts, in init's own words and in the
 /// order it happens; an `on` section that waits for anything else waits
 /// for something a recovery cannot tell will happen.
-pub(crate) const STARTING: [&str; 11] = ["early-init", "init", "late-init", "early-fs", "fs", "post-fs", "late-fs", "post-fs-data", "zygote-start", "early-boot", "boot"];
+pub(crate) const STARTING: [&str; 11] = [
+    "early-init",
+    "init",
+    "late-init",
+    "early-fs",
+    "fs",
+    "post-fs",
+    "late-fs",
+    "post-fs-data",
+    "zygote-start",
+    "early-boot",
+    "boot",
+];
 
 /// What the names of the properties begin with that are set once, as the
 /// phone starts, and stay as they are.
@@ -70,7 +85,11 @@ impl Partition {
     /// A partition read where it is mounted.
     pub fn mounted(name: &str, mounted: impl Into<PathBuf>) -> Partition {
         let mounted = mounted.into();
-        Partition { name: name.into(), at: mounted.clone(), mounted }
+        Partition {
+            name: name.into(),
+            at: mounted.clone(),
+            mounted,
+        }
     }
 }
 
@@ -79,7 +98,10 @@ impl Partition {
 /// the top of the tree, or under another that keeps a link to it there:
 /// the installed system keeps one to each of the others under /system, and
 /// the vendor partition one to the odm partition.
-pub fn partition_of<'p, 'a>(partitions: impl IntoIterator<Item = &'p str> + Clone, path: &'a str) -> Option<(&'p str, &'a str)> {
+pub fn partition_of<'p, 'a>(
+    partitions: impl IntoIterator<Item = &'p str> + Clone,
+    path: &'a str,
+) -> Option<(&'p str, &'a str)> {
     let mut rest = path.strip_prefix('/')?;
     let named = |top: &str| partitions.clone().into_iter().find(|name| *name == top);
     loop {
@@ -161,14 +183,29 @@ impl Phone {
     /// and whose build give it `properties`. `bundle` is where a recovery
     /// has opened the libraries the partitions were built against, where
     /// the phone carries them as a bundle of their own.
-    pub fn read(partitions: Vec<Partition>, mut properties: HashMap<String, String>, bundle: Option<&Path>) -> Result<Phone> {
+    pub fn read(
+        partitions: Vec<Partition>,
+        mut properties: HashMap<String, String>,
+        bundle: Option<&Path>,
+    ) -> Result<Phone> {
         for (name, from, otherwise) in FROM_BOOTLOADER {
-            match properties.get(from).cloned().or(otherwise.map(str::to_string)) {
+            match properties
+                .get(from)
+                .cloned()
+                .or(otherwise.map(str::to_string))
+            {
                 Some(value) => properties.insert(name.to_string(), value),
                 None => properties.remove(name),
             };
         }
-        let mut phone = Phone { partitions, properties, bundle: bundle.map(Path::to_path_buf), programs: Vec::new(), actions: Vec::new(), services: Vec::new() };
+        let mut phone = Phone {
+            partitions,
+            properties,
+            bundle: bundle.map(Path::to_path_buf),
+            programs: Vec::new(),
+            actions: Vec::new(),
+            services: Vec::new(),
+        };
         phone.read_scripts()?;
         phone.read_descriptions()?;
         Ok(phone)
@@ -186,7 +223,8 @@ impl Phone {
     /// it on. A script may name a program its partition does not carry,
     /// and init leaves such a one unstarted and goes on.
     pub fn carries(&self, program: &Program) -> bool {
-        self.locate(&program.path).is_some_and(|file| file.symlink_metadata().is_ok())
+        self.locate(&program.path)
+            .is_some_and(|file| file.symlink_metadata().is_ok())
     }
 
     /// The names of the services of the newer kind the phone describes,
@@ -194,7 +232,11 @@ impl Phone {
     /// service directory takes from the programs that register them.
     pub fn told_of(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for service in self.services.iter().filter(|s| s.described.kind == Kind::Aidl) {
+        for service in self
+            .services
+            .iter()
+            .filter(|s| s.described.kind == Kind::Aidl)
+        {
             let name = service.described.name();
             if !names.contains(&name) {
                 names.push(name);
@@ -206,13 +248,18 @@ impl Phone {
     /// Where the file a script names `path` is read now; none where it is
     /// on none of the partitions read.
     pub fn locate(&self, path: &str) -> Option<PathBuf> {
-        self.within(path).map(|(partition, within)| partition.at.join(within))
+        self.within(path)
+            .map(|(partition, within)| partition.at.join(within))
     }
 
     /// Where the program a script names `path` is started from.
     pub fn started_from(&self, path: &str) -> String {
         match self.within(path) {
-            Some((partition, within)) => partition.mounted.join(within).to_string_lossy().into_owned(),
+            Some((partition, within)) => partition
+                .mounted
+                .join(within)
+                .to_string_lossy()
+                .into_owned(),
             None => path.to_string(),
         }
     }
@@ -234,7 +281,10 @@ impl Phone {
     pub fn holds(&self, triggers: &[String]) -> Happens {
         let mut all = Happens::Yes;
         for trigger in triggers {
-            let one = match trigger.strip_prefix("property:").map(|p| p.split_once('=').unwrap_or((p, ""))) {
+            let one = match trigger
+                .strip_prefix("property:")
+                .map(|p| p.split_once('=').unwrap_or((p, "")))
+            {
                 None => match STARTING.contains(&trigger.as_str()) {
                     true => Happens::Yes,
                     false => Happens::No,
@@ -268,7 +318,9 @@ impl Phone {
         let told = |commands: &[&str]| -> Happens {
             let mut told = Happens::No;
             for action in &self.actions {
-                if !action.commands.iter().any(|c| c.len() == 2 && commands.contains(&c[0].as_str()) && c[1] == program.name) {
+                if !action.commands.iter().any(|c| {
+                    c.len() == 2 && commands.contains(&c[0].as_str()) && c[1] == program.name
+                }) {
                     continue;
                 }
                 match self.holds(&action.triggers) {
@@ -306,7 +358,9 @@ impl Phone {
             if !read.insert(path.clone()) {
                 continue;
             }
-            let Some(file) = self.locate(&path) else { continue };
+            let Some(file) = self.locate(&path) else {
+                continue;
+            };
             if file.is_dir() {
                 waiting.extend(self.scripts_in(&path)?);
                 continue;
@@ -317,7 +371,12 @@ impl Phone {
                 Err(e) => return Err(e).with_context(|| format!("read {}", file.display())),
             };
             let script = script::read(&text).with_context(|| format!("read {path}"))?;
-            waiting.extend(script.imports.iter().filter_map(|import| self.expand(import)));
+            waiting.extend(
+                script
+                    .imports
+                    .iter()
+                    .filter_map(|import| self.expand(import)),
+            );
             self.actions.extend(script.actions);
             for mut program in script.programs {
                 program.script = path.clone();
@@ -339,7 +398,10 @@ impl Phone {
             Some(at) => files_in(&at, "rc")?,
             None => Vec::new(),
         };
-        Ok(names.into_iter().map(|name| format!("{folder}/{name}")).collect())
+        Ok(names
+            .into_iter()
+            .map(|name| format!("{folder}/{name}"))
+            .collect())
     }
 
     /// The files the phone's init puts in the place of others as the phone
@@ -347,7 +409,11 @@ impl Phone {
     /// mounting the one on the other, in an `on` section that holds.
     pub fn put_in_place(&self) -> HashMap<String, String> {
         let mut put = HashMap::new();
-        for action in self.actions.iter().filter(|a| self.holds(&a.triggers) == Happens::Yes) {
+        for action in self
+            .actions
+            .iter()
+            .filter(|a| self.holds(&a.triggers) == Happens::Yes)
+        {
             for command in &action.commands {
                 if let [mount, _, from, onto, options @ ..] = &command[..]
                     && mount == "mount"
@@ -368,7 +434,9 @@ impl Phone {
     fn read_descriptions(&mut self) -> Result<()> {
         let put = self.put_in_place();
         for (name, build) in DESCRIBING {
-            let Some(partition) = self.partitions.iter().find(|p| p.name == name) else { continue };
+            let Some(partition) = self.partitions.iter().find(|p| p.name == name) else {
+                continue;
+            };
             let folder = partition.at.join(DESCRIPTIONS);
             let mut files = Vec::new();
             let main = match self.properties.get(build) {
@@ -378,7 +446,11 @@ impl Phone {
             if folder.join(&main).is_file() {
                 files.push(main);
             }
-            files.extend(files_in(&folder.join("manifest"), "xml")?.into_iter().map(|file| format!("manifest/{file}")));
+            files.extend(
+                files_in(&folder.join("manifest"), "xml")?
+                    .into_iter()
+                    .map(|file| format!("manifest/{file}")),
+            );
             for file in files {
                 let named = format!("/{name}/{DESCRIPTIONS}/{file}");
                 let in_its_place = put.get(&named).cloned();
@@ -386,9 +458,15 @@ impl Phone {
                     Some(other) => self.locate(other).with_context(|| format!("{other}, which the phone puts in the place of {named}, is on no partition read"))?,
                     None => folder.join(&file),
                 };
-                let text = fs::read_to_string(&at).with_context(|| format!("read {}", at.display()))?;
-                for described in description::read(&text).with_context(|| format!("read {}", in_its_place.as_deref().unwrap_or(&named)))? {
-                    self.services.push(Service { described, file: named.clone() });
+                let text =
+                    fs::read_to_string(&at).with_context(|| format!("read {}", at.display()))?;
+                for described in description::read(&text).with_context(|| {
+                    format!("read {}", in_its_place.as_deref().unwrap_or(&named))
+                })? {
+                    self.services.push(Service {
+                        described,
+                        file: named.clone(),
+                    });
                 }
             }
         }
@@ -423,31 +501,99 @@ mod tests {
     #[test]
     fn a_path_is_on_the_partition_named_at_its_top_or_linked_under_system() {
         let on = |path| partition_of(PARTITIONS, path);
-        assert_eq!(on("/vendor/bin/hw/android.hardware.boot-service.qti"), Some(("vendor", "bin/hw/android.hardware.boot-service.qti")));
+        assert_eq!(
+            on("/vendor/bin/hw/android.hardware.boot-service.qti"),
+            Some(("vendor", "bin/hw/android.hardware.boot-service.qti"))
+        );
         assert_eq!(on("/odm/etc/init"), Some(("odm", "etc/init")));
-        assert_eq!(on("/system/system_ext/bin/hwservicemanager"), Some(("system_ext", "bin/hwservicemanager")), "the installed system links to it");
+        assert_eq!(
+            on("/system/system_ext/bin/hwservicemanager"),
+            Some(("system_ext", "bin/hwservicemanager")),
+            "the installed system links to it"
+        );
         assert_eq!(on("/system/vendor/bin/sh"), Some(("vendor", "bin/sh")));
-        assert_eq!(on("/vendor/odm/bin/init.mi.factory_id.sh"), Some(("odm", "bin/init.mi.factory_id.sh")), "the vendor partition links to it");
+        assert_eq!(
+            on("/vendor/odm/bin/init.mi.factory_id.sh"),
+            Some(("odm", "bin/init.mi.factory_id.sh")),
+            "the vendor partition links to it"
+        );
         assert_eq!(on("/system/vendor/odm/etc"), Some(("odm", "etc")));
         assert_eq!(on("/vendor"), Some(("vendor", "")));
-        assert_eq!(on("/system/bin/sh"), None, "the installed system's own partition is not read");
-        assert_eq!(on("/vendor_dlkm/lib/modules"), None, "a longer name is another partition");
+        assert_eq!(
+            on("/system/bin/sh"),
+            None,
+            "the installed system's own partition is not read"
+        );
+        assert_eq!(
+            on("/vendor_dlkm/lib/modules"),
+            None,
+            "a longer name is another partition"
+        );
         assert_eq!(on("vendor/bin/sh"), None, "a path from nowhere is on none");
     }
 
     #[test]
     fn a_phone_expands_the_properties_it_has_and_falls_back_where_a_script_says_how() {
-        let properties = [("ro.boot.hardware", "qcom"), ("ro.boot.product.vendor.sku", "sun")].map(|(name, value)| (name.to_string(), value.to_string()));
+        let properties = [
+            ("ro.boot.hardware", "qcom"),
+            ("ro.boot.product.vendor.sku", "sun"),
+        ]
+        .map(|(name, value)| (name.to_string(), value.to_string()));
         let phone = Phone::read(Vec::new(), properties.into_iter().collect(), None).unwrap();
-        assert_eq!(phone.expand("/vendor/etc/init/hw/init.${ro.hardware}.rc").as_deref(), Some("/vendor/etc/init/hw/init.qcom.rc"), "init makes it of the bootloader's");
-        assert_eq!(phone.expand("init.${ro.boot.product.vendor.sku}.${ro.boot.mode:-normal}.rc").as_deref(), Some("init.sun.normal.rc"));
-        assert_eq!(phone.expand("init.${ro.boot.hwc}.rc"), None, "a property the phone does not have, and nothing to put in its place");
+        assert_eq!(
+            phone
+                .expand("/vendor/etc/init/hw/init.${ro.hardware}.rc")
+                .as_deref(),
+            Some("/vendor/etc/init/hw/init.qcom.rc"),
+            "init makes it of the bootloader's"
+        );
+        assert_eq!(
+            phone
+                .expand("init.${ro.boot.product.vendor.sku}.${ro.boot.mode:-normal}.rc")
+                .as_deref(),
+            Some("init.sun.normal.rc")
+        );
+        assert_eq!(
+            phone.expand("init.${ro.boot.hwc}.rc"),
+            None,
+            "a property the phone does not have, and nothing to put in its place"
+        );
         let triggers = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
-        assert_eq!(phone.holds(&triggers(&["boot", "property:ro.boot.product.vendor.sku=sun"])), Happens::Yes);
-        assert_eq!(phone.holds(&triggers(&["boot", "property:ro.boot.product.vendor.sku=kera"])), Happens::No);
-        assert_eq!(phone.holds(&triggers(&["property:ro.boot.hwc=CN"])), Happens::No, "one set for good as the phone starts, and not set");
-        assert_eq!(phone.holds(&triggers(&["init", "property:vendor.ese.strongbox=NXP"])), Happens::Maybe, "one a program may set while it runs");
-        assert_eq!(phone.holds(&triggers(&["property:sys.boot_completed=1", "property:ro.boot.hwc=CN"])), Happens::No);
-        assert_eq!(phone.holds(&triggers(&["charger"])), Happens::No, "nothing that happens as every phone starts");
+        assert_eq!(
+            phone.holds(&triggers(&[
+                "boot",
+                "property:ro.boot.product.vendor.sku=sun"
+            ])),
+            Happens::Yes
+        );
+        assert_eq!(
+            phone.holds(&triggers(&[
+                "boot",
+                "property:ro.boot.product.vendor.sku=kera"
+            ])),
+            Happens::No
+        );
+        assert_eq!(
+            phone.holds(&triggers(&["property:ro.boot.hwc=CN"])),
+            Happens::No,
+            "one set for good as the phone starts, and not set"
+        );
+        assert_eq!(
+            phone.holds(&triggers(&["init", "property:vendor.ese.strongbox=NXP"])),
+            Happens::Maybe,
+            "one a program may set while it runs"
+        );
+        assert_eq!(
+            phone.holds(&triggers(&[
+                "property:sys.boot_completed=1",
+                "property:ro.boot.hwc=CN"
+            ])),
+            Happens::No
+        );
+        assert_eq!(
+            phone.holds(&triggers(&["charger"])),
+            Happens::No,
+            "nothing that happens as every phone starts"
+        );
     }
 }

@@ -27,7 +27,11 @@ impl App {
     /// How far giving the data partition's files their labels has come:
     /// entries looked at, of how many, and how many took a new label.
     pub fn relabel_progress(&mut self, checked: u64, total: u64, changed: u64) {
-        let job = self.state.relabel.as_mut().expect("only work under way moves on");
+        let job = self
+            .state
+            .relabel
+            .as_mut()
+            .expect("only work under way moves on");
         (job.checked, job.total, job.changed) = (checked, total, changed);
         if self.screen() == Screen::Relabel {
             self.refresh();
@@ -37,7 +41,11 @@ impl App {
     /// Giving the data partition's files their labels has ended: its page
     /// says how, lit for the user to read.
     pub fn relabel_ended(&mut self, end: JobEnd, now: u64) {
-        let job = self.state.relabel.as_mut().expect("only work under way ends");
+        let job = self
+            .state
+            .relabel
+            .as_mut()
+            .expect("only work under way ends");
         job.stopping = false;
         job.outcome = Some(end);
         self.wake(now);
@@ -58,12 +66,23 @@ mod tests {
         assert_eq!(app.screen(), Screen::Relabel);
         assert!(swipe(&mut app, &f, &i, Confirm::Relabel).is_empty());
         assert_eq!(toast(&app), Some("请先在「解密」中打开 data 分区"));
-        app.state.data = Data::Locked { user: 0, keys: Keys::Digits, checking: false };
+        app.state.data = Data::Locked {
+            user: 0,
+            keys: Keys::Digits,
+            checking: false,
+        };
         app.refresh();
-        assert_eq!(swipe(&mut app, &f, &i, Confirm::Relabel), vec![Effect::Relabel], "open, though a user has yet to unlock");
+        assert_eq!(
+            swipe(&mut app, &f, &i, Confirm::Relabel),
+            vec![Effect::Relabel],
+            "open, though a user has yet to unlock"
+        );
         app.state.data = Data::Open;
         app.refresh();
-        assert_eq!(swipe(&mut app, &f, &i, Confirm::Relabel), vec![Effect::Relabel]);
+        assert_eq!(
+            swipe(&mut app, &f, &i, Confirm::Relabel),
+            vec![Effect::Relabel]
+        );
         app.relabel_started();
         assert!(!app.frame(&f, &i).back, "no going back while it works");
         app.key(Key::Back, 0);
@@ -71,12 +90,28 @@ mod tests {
         assert_eq!(toast(&app), Some("请等待完成或停止后再返回"));
         app.relabel_progress(0, 0, 0);
         app.relabel_progress(10, 400, 2);
-        assert_eq!(tap(&mut app, &f, &i, Action::StopRelabel), vec![Effect::StopRelabel]);
-        assert!(!app.frame(&f, &i).hits.iter().any(|h| h.action == Action::StopRelabel), "stopping, it is not asked again");
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::StopRelabel),
+            vec![Effect::StopRelabel]
+        );
+        assert!(
+            !app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| h.action == Action::StopRelabel),
+            "stopping, it is not asked again"
+        );
         app.relabel_progress(12, 400, 3);
         app.relabel_ended(JobEnd::Stopped, 0);
-        let job = app.state.relabel.clone().expect("the page shows how it ended");
-        assert_eq!((job.checked, job.total, job.changed, job.outcome), (12, 400, 3, Some(JobEnd::Stopped)));
+        let job = app
+            .state
+            .relabel
+            .clone()
+            .expect("the page shows how it ended");
+        assert_eq!(
+            (job.checked, job.total, job.changed, job.outcome),
+            (12, 400, 3, Some(JobEnd::Stopped))
+        );
         assert!(app.frame(&f, &i).back);
         tap_at(&mut app, &f, &i, Action::Back, 2000);
         assert_eq!(app.screen(), Screen::Advanced);

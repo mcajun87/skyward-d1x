@@ -33,7 +33,11 @@ pub fn status(line: &str) -> Option<Status> {
         return step.split_once('/')?.0.parse().ok().map(Status::Step);
     }
     let code = text.strip_prefix("Error applying update: ")?;
-    code.split_whitespace().next()?.parse().ok().map(Status::Error)
+    code.split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+        .map(Status::Error)
 }
 
 /// What its log on stderr tells beyond the status lines.
@@ -59,7 +63,10 @@ pub fn log(line: &str) -> Option<Log> {
     let rest = after(line, "Hashing partition ")?;
     let (index, rest) = rest.split_once(" (")?;
     let (name, _) = rest.split_once(')')?;
-    Some(Log::Hashing { index: index.parse().ok()?, partition: name.to_string() })
+    Some(Log::Hashing {
+        index: index.parse().ok()?,
+        partition: name.to_string(),
+    })
 }
 
 fn after<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
@@ -146,19 +153,34 @@ mod tests {
     #[test]
     fn the_log_names_partitions_and_the_one_being_read_back() {
         assert_eq!(
-            log("[INFO:delta_performer.cc(267)] PartitionInfo new vendor_boot sha256: 3f8a size: 100663296"),
+            log(
+                "[INFO:delta_performer.cc(267)] PartitionInfo new vendor_boot sha256: 3f8a size: 100663296"
+            ),
             Some(Log::Partition("vendor_boot".into()))
         );
         assert_eq!(
-            log("[INFO:filesystem_verifier_action.cc(377)] Hashing partition 3 (odm) on device /dev/block/dm-12"),
-            Some(Log::Hashing { index: 3, partition: "odm".into() })
+            log(
+                "[INFO:filesystem_verifier_action.cc(377)] Hashing partition 3 (odm) on device /dev/block/dm-12"
+            ),
+            Some(Log::Hashing {
+                index: 3,
+                partition: "odm".into()
+            })
         );
         assert_eq!(
-            log("[INFO:dynamic_partition_control_android.cc(1349)] Will overwrite existing partitions. Slot B may be unbootable until update finishes!"),
+            log(
+                "[INFO:dynamic_partition_control_android.cc(1349)] Will overwrite existing partitions. Slot B may be unbootable until update finishes!"
+            ),
             Some(Log::Overwriting)
         );
-        assert_eq!(log("[INFO:delta_performer.cc(267)] PartitionInfo old odm sha256: 00 size: 4"), None);
-        assert_eq!(log("[INFO:delta_performer.cc(108)] Completed 10/400 operations (2%)"), None);
+        assert_eq!(
+            log("[INFO:delta_performer.cc(267)] PartitionInfo old odm sha256: 00 size: 4"),
+            None
+        );
+        assert_eq!(
+            log("[INFO:delta_performer.cc(108)] Completed 10/400 operations (2%)"),
+            None
+        );
     }
 
     #[test]

@@ -57,7 +57,12 @@ impl App {
             return Vec::new();
         }
         if self.adjusting {
-            if let Some(Spot { stop: Stop::Hit(Action::Slider(which)), rect, .. }) = self.lit() {
+            if let Some(Spot {
+                stop: Stop::Hit(Action::Slider(which)),
+                rect,
+                ..
+            }) = self.lit()
+            {
                 let level = self.level(which) + if down { -SLIDER_STEP } else { SLIDER_STEP };
                 self.set_level(&self.theme(), which, rect, level);
                 if which == Slider::Vibration && self.state.vibrate {
@@ -99,8 +104,14 @@ impl App {
         let held = |k: usize| matches!(spots[k].group, Group::Fixed | Group::Strip);
         let docked = |k: usize| spots[k].group == Group::Dock;
         // The page's own controls not wholly above the band, or below it.
-        let from_top = |k: usize| page(k) && self.place(&spots[k], scroll).is_some_and(|r| r.y + r.h > top);
-        let from_bottom = |k: usize| page(k) && self.place(&spots[k], scroll).is_some_and(|r| r.y < bottom);
+        let from_top = |k: usize| {
+            page(k)
+                && self
+                    .place(&spots[k], scroll)
+                    .is_some_and(|r| r.y + r.h > top)
+        };
+        let from_bottom =
+            |k: usize| page(k) && self.place(&spots[k], scroll).is_some_and(|r| r.y < bottom);
         enum To {
             Spot(usize),
             Scroll,
@@ -118,8 +129,13 @@ impl App {
             };
             match cur {
                 Some(i) if page(i) => (i + 1..n).find(|&k| page(k)).map_or_else(past, To::Spot),
-                Some(i) if docked(i) => (i + 1..n).find(|&k| docked(k)).map_or(if scroll < max { To::Scroll } else { To::Round }, To::Spot),
-                Some(i) => (i + 1..n).find(|&k| held(k)).or_else(|| (0..n).find(|&k| from_top(k))).map_or_else(past, To::Spot),
+                Some(i) if docked(i) => (i + 1..n)
+                    .find(|&k| docked(k))
+                    .map_or(if scroll < max { To::Scroll } else { To::Round }, To::Spot),
+                Some(i) => (i + 1..n)
+                    .find(|&k| held(k))
+                    .or_else(|| (0..n).find(|&k| from_top(k)))
+                    .map_or_else(past, To::Spot),
                 None => (0..n).find(|&k| from_top(k)).map_or_else(past, To::Spot),
             }
         } else {
@@ -133,10 +149,23 @@ impl App {
                 }
             };
             match cur {
-                Some(i) if page(i) => (0..i).rev().find(|&k| page(k)).map_or_else(before, To::Spot),
-                Some(i) if docked(i) => (0..i).rev().find(|&k| docked(k)).or_else(|| (0..n).rev().find(|&k| from_bottom(k))).map_or_else(before, To::Spot),
-                Some(i) => (0..i).rev().find(|&k| held(k)).map_or(if scroll > 0.0 { To::Scroll } else { To::Round }, To::Spot),
-                None => (0..n).rev().find(|&k| from_bottom(k)).map_or_else(before, To::Spot),
+                Some(i) if page(i) => (0..i)
+                    .rev()
+                    .find(|&k| page(k))
+                    .map_or_else(before, To::Spot),
+                Some(i) if docked(i) => (0..i)
+                    .rev()
+                    .find(|&k| docked(k))
+                    .or_else(|| (0..n).rev().find(|&k| from_bottom(k)))
+                    .map_or_else(before, To::Spot),
+                Some(i) => (0..i)
+                    .rev()
+                    .find(|&k| held(k))
+                    .map_or(if scroll > 0.0 { To::Scroll } else { To::Round }, To::Spot),
+                None => (0..n)
+                    .rev()
+                    .find(|&k| from_bottom(k))
+                    .map_or_else(before, To::Spot),
             }
         };
         match to {
@@ -158,7 +187,11 @@ impl App {
             To::Round => {
                 let s = spots[if down { 0 } else { n - 1 }];
                 let end = if down { 0.0 } else { max };
-                let target = if self.shows(&s, end) { end } else { self.reveal(&s, end) };
+                let target = if self.shows(&s, end) {
+                    end
+                } else {
+                    self.reveal(&s, end)
+                };
                 self.seek_to(target, now);
                 self.top_mut().2 = Focus::On(s);
             }
@@ -173,7 +206,11 @@ impl App {
         let scroll = self.resting();
         let (top, bottom) = self.band(scroll);
         let half = (bottom - top) / 2.0;
-        let target = if down { (scroll + half).min(self.max_scroll()) } else { (scroll - half).max(0.0) };
+        let target = if down {
+            (scroll + half).min(self.max_scroll())
+        } else {
+            (scroll - half).max(0.0)
+        };
         // A page coming to rest with its search bar part folded folds it
         // whole or not at all, as one let go there does.
         let target = self.frame.as_ref().map_or(target, |fr| fr.settle(target));
@@ -182,8 +219,17 @@ impl App {
             return;
         }
         let band = self.band(target);
-        let in_view = |k: &usize| spots[*k].group == Group::Page && self.place(&spots[*k], target).is_some_and(|r| within(r, band));
-        let next = if down { (0..spots.len()).find(in_view) } else { (0..spots.len()).rev().find(in_view) };
+        let in_view = |k: &usize| {
+            spots[*k].group == Group::Page
+                && self
+                    .place(&spots[*k], target)
+                    .is_some_and(|r| within(r, band))
+        };
+        let next = if down {
+            (0..spots.len()).find(in_view)
+        } else {
+            (0..spots.len()).rev().find(in_view)
+        };
         self.top_mut().2 = next.map_or(Focus::Off, |k| Focus::On(spots[k]));
     }
 
@@ -210,7 +256,10 @@ impl App {
             Focus::Unset => None,
         };
         let spot = spots[found.or_else(|| self.first_in_view(spots, scroll))?];
-        self.stack.last_mut().expect("the page stack always holds a page").2 = Focus::On(spot);
+        self.stack
+            .last_mut()
+            .expect("the page stack always holds a page")
+            .2 = Focus::On(spot);
         Some(spot)
     }
 
@@ -218,22 +267,45 @@ impl App {
     /// the bottom strip's first, or else the `<` or the top strip's first.
     fn first_in_view(&self, spots: &[Spot], scroll: f32) -> Option<usize> {
         let band = self.band(scroll);
-        let k = spots.iter().position(|s| s.group == Group::Page && self.place(s, scroll).is_some_and(|r| within(r, band)));
+        let k = spots.iter().position(|s| {
+            s.group == Group::Page && self.place(s, scroll).is_some_and(|r| within(r, band))
+        });
         k.or_else(|| spots.iter().position(|s| s.group == Group::Dock))
-            .or_else(|| spots.iter().position(|s| matches!(s.group, Group::Fixed | Group::Strip)))
+            .or_else(|| {
+                spots
+                    .iter()
+                    .position(|s| matches!(s.group, Group::Fixed | Group::Strip))
+            })
     }
 
     /// Where on screen `s` is with the page `offset` pixels down; nowhere
     /// for a search bar folded away.
     pub(super) fn place(&self, s: &Spot, offset: f32) -> Option<Rect> {
-        let fr = self.frame.as_ref().expect("a control is placed on the page drawn");
+        let fr = self
+            .frame
+            .as_ref()
+            .expect("a control is placed on the page drawn");
         let dy = match s.group {
             Group::Fixed => 0.0,
-            Group::Strip => pinned_top(&self.theme(), fr.pinned.as_ref().expect("the strip holds its controls"), offset),
+            Group::Strip => pinned_top(
+                &self.theme(),
+                fr.pinned.as_ref().expect("the strip holds its controls"),
+                offset,
+            ),
             Group::Page => return fr.shown(s.rect, offset),
-            Group::Dock => self.h as f32 - fr.dock.as_ref().expect("the dock holds its controls").canvas.h as f32,
+            Group::Dock => {
+                self.h as f32
+                    - fr.dock
+                        .as_ref()
+                        .expect("the dock holds its controls")
+                        .canvas
+                        .h as f32
+            }
         };
-        Some(Rect { y: s.rect.y + dy, ..s.rect })
+        Some(Rect {
+            y: s.rect.y + dy,
+            ..s.rect
+        })
     }
 
     /// The band of the screen the page's own controls show in with the page
@@ -246,12 +318,18 @@ impl App {
             Some(p) => pinned_top(&t, p, scroll) + p.canvas.h as f32,
             None => widgets::bar_bottom(&t),
         };
-        (top, self.h as f32 - fr.dock.as_ref().map_or(0.0, |d| d.canvas.h as f32))
+        (
+            top,
+            self.h as f32 - fr.dock.as_ref().map_or(0.0, |d| d.canvas.h as f32),
+        )
     }
 
     /// Whether `s` shows, in part at least, with the page at `scroll`.
     pub(super) fn shows(&self, s: &Spot, scroll: f32) -> bool {
-        s.group != Group::Page || self.place(s, scroll).is_some_and(|r| within(r, self.band(scroll)))
+        s.group != Group::Page
+            || self
+                .place(s, scroll)
+                .is_some_and(|r| within(r, self.band(scroll)))
     }
 
     /// How far down to scroll the page from `scroll` to show `s` whole, a
@@ -260,7 +338,10 @@ impl App {
     /// the page's top, and a page scrolled down to show any other control
     /// goes on to fold the bar away whole.
     fn reveal(&self, s: &Spot, scroll: f32) -> f32 {
-        let fr = self.frame.as_ref().expect("a control is revealed on the page drawn");
+        let fr = self
+            .frame
+            .as_ref()
+            .expect("a control is revealed on the page drawn");
         let fold = fr.fold.filter(|_| s.group == Group::Page);
         if fold.is_some_and(|f| f.bar == s.rect) {
             return 0.0;
@@ -268,7 +349,9 @@ impl App {
         let margin = self.theme().m.margin;
         let (top, bottom) = self.band(scroll);
         let (top, bottom) = (top + margin, bottom - margin);
-        let r = self.place(s, scroll).expect("only a search bar folded away has no place");
+        let r = self
+            .place(s, scroll)
+            .expect("only a search bar folded away has no place");
         let d = if r.y < top {
             r.y - top
         } else if r.y + r.h > bottom {
@@ -277,7 +360,13 @@ impl App {
             0.0
         };
         let target = scroll + d;
-        let target = fold.map_or(target, |f| if target > 0.0 && target < f.span { f.span } else { target });
+        let target = fold.map_or(target, |f| {
+            if target > 0.0 && target < f.span {
+                f.span
+            } else {
+                target
+            }
+        });
         target.clamp(0.0, self.max_scroll())
     }
 
@@ -291,10 +380,24 @@ impl App {
         }
         let spot = self.lit()?;
         let t = self.theme();
-        let keypad = self.screen() == Screen::Decrypt && matches!(self.state.data, Data::Locked { keys: Keys::Digits, .. });
+        let keypad = self.screen() == Screen::Decrypt
+            && matches!(
+                self.state.data,
+                Data::Locked {
+                    keys: Keys::Digits,
+                    ..
+                }
+            );
         let (r, radius) = focus::lit(&t, spot.stop, self.place(&spot, offset)?, keypad);
-        let held = matches!(self.button, Some((_, Press::Power { .. } | Press::Slide { .. })));
-        let alpha = if held || self.adjusting { LIGHT_HELD_ALPHA } else { LIGHT_ALPHA };
+        let held = matches!(
+            self.button,
+            Some((_, Press::Power { .. } | Press::Slide { .. }))
+        );
+        let alpha = if held || self.adjusting {
+            LIGHT_HELD_ALPHA
+        } else {
+            LIGHT_ALPHA
+        };
         Some((spot.group, r, radius, t.pal.accent.with_alpha(alpha)))
     }
 }
@@ -308,13 +411,24 @@ mod tests {
     fn the_keys_unfold_the_search_bar_to_light_it() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
-        let span = app.frame(&f, &i).fold.expect("the home page's search bar folds").span;
+        let span = app
+            .frame(&f, &i)
+            .fold
+            .expect("the home page's search bar folds")
+            .span;
         scroll_to(&mut app, &f, span, 0);
         app.tick(3000);
         press(&mut app, Key::VolumeDown, 3000);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::About))), "a bar folded away is not in view");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::About))),
+            "a bar folded away is not in view"
+        );
         press(&mut app, Key::VolumeUp, 3000);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))));
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search)))
+        );
         for ms in (3000..5000).step_by(8) {
             app.tick(ms);
         }
@@ -326,7 +440,10 @@ mod tests {
     #[test]
     fn the_keys_reach_the_last_row_of_a_home_page_grown_by_an_update_notice() {
         let f = fonts();
-        let i = DeviceInfo { snapshot: SnapshotState::Snapshotted, ..info() };
+        let i = DeviceInfo {
+            snapshot: SnapshotState::Snapshotted,
+            ..info()
+        };
         let mut app = App::new(Screen::Home, W, SNUG, PPD);
         let (_, y) = spot(&mut app, &f, &i, Action::Open(Screen::Reboot));
         assert!(y > SNUG as f32, "below the screen to start with");
@@ -347,7 +464,10 @@ mod tests {
         app.frame(&f, &i);
         assert_eq!(app.light(0.0), None, "a page opens to the touch");
         app.touchscreen_missing();
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))));
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search)))
+        );
         assert!(app.light(0.0).is_some(), "lit before any key is pressed");
         assert!(app.take_dirty(), "and shown");
     }
@@ -359,21 +479,42 @@ mod tests {
         app.frame(&f, &i);
         assert!(!app.keys, "a page opens to the touch");
         press(&mut app, Key::VolumeDown, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))), "the first press lights the first control in view");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search))),
+            "the first press lights the first control in view"
+        );
         press(&mut app, Key::VolumeDown, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::About))));
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::About)))
+        );
         press(&mut app, Key::VolumeDown, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Install))));
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Install)))
+        );
         press(&mut app, Key::VolumeUp, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::About))));
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::About)))
+        );
         press(&mut app, Key::VolumeUp, 0);
         press(&mut app, Key::VolumeUp, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Reboot))), "up from the first goes round to the last");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Reboot))),
+            "up from the first goes round to the last"
+        );
         app.tick(5000);
         let reboot = app.lit().expect("lit");
         assert!(app.shows(&reboot, app.top().1), "scrolled into view");
         press(&mut app, Key::VolumeDown, 6000);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))), "down from the last goes round to the first");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search))),
+            "down from the last goes round to the first"
+        );
         app.tick(10_000);
         assert_eq!(app.top().1, 0.0, "at the top of the page again");
     }
@@ -385,19 +526,38 @@ mod tests {
         app.frame(&f, &i);
         light_on(&mut app, &f, &i, Stop::Hit(Action::Open(Screen::Settings)));
         assert!(app.key(Key::Power, 0).is_empty());
-        assert_eq!(app.screen(), Screen::Home, "nothing happens as the key goes down");
+        assert_eq!(
+            app.screen(),
+            Screen::Home,
+            "nothing happens as the key goes down"
+        );
         app.key_up(Key::Power, 0);
-        assert_eq!(app.screen(), Screen::Settings, "the row opens its page as the key comes up");
+        assert_eq!(
+            app.screen(),
+            Screen::Settings,
+            "the row opens its page as the key comes up"
+        );
         let first = lit(&mut app, &f, &i);
-        assert!(first.is_some() && first != Some(Stop::Back), "the page's first control is lit, not the `<`: {first:?}");
+        assert!(
+            first.is_some() && first != Some(Stop::Back),
+            "the page's first control is lit, not the `<`: {first:?}"
+        );
         app.key(Key::Back, 0);
         assert_eq!(app.screen(), Screen::Home);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Settings))), "back on the page, the keys are where they left it");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Settings))),
+            "back on the page, the keys are where they left it"
+        );
         light_on(&mut app, &f, &i, Stop::Hit(Action::Open(Screen::Settings)));
         press(&mut app, Key::Power, 0);
         assert_eq!(lit(&mut app, &f, &i), first);
         press(&mut app, Key::VolumeUp, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Back), "up from the page's first control comes to the `<`");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Back),
+            "up from the page's first control comes to the `<`"
+        );
         press(&mut app, Key::Power, 0);
         assert_eq!(app.screen(), Screen::Home, "the `<` goes back");
     }
@@ -406,13 +566,23 @@ mod tests {
     fn past_the_last_control_the_keys_scroll_on_half_a_screen_a_press() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Installing, W, H, PPD);
-        app.state.install = Install::Finished { outcome: Outcome::Ran { wipe_cache: false }, damage: None };
+        app.state.install = Install::Finished {
+            outcome: Outcome::Ran { wipe_cache: false },
+            damage: None,
+        };
         app.state.script_output = (0..300).map(|k| format!("- line {k}")).collect();
         app.frame(&f, &i);
         let (max, (top, bottom)) = (app.max_scroll(), app.band(0.0));
         let half = (bottom - top) / 2.0;
-        assert!(max > half * 4.0, "the script's output runs on below the controls: {max}");
-        let last = *app.spots().expect("drawn").last().expect("controls on the page");
+        assert!(
+            max > half * 4.0,
+            "the script's output runs on below the controls: {max}"
+        );
+        let last = *app
+            .spots()
+            .expect("drawn")
+            .last()
+            .expect("controls on the page");
         light_on(&mut app, &f, &i, last.stop);
         let mut at = app.resting();
         let mut presses = 0;
@@ -423,14 +593,26 @@ mod tests {
             presses += 1;
             assert!(presses < 40);
             if !app.shows(&last, at) {
-                assert_eq!(lit(&mut app, &f, &i), None, "with no control in view, nothing is lit");
+                assert_eq!(
+                    lit(&mut app, &f, &i),
+                    None,
+                    "with no control in view, nothing is lit"
+                );
             }
         }
         press(&mut app, Key::VolumeDown, 0);
         let first = app.spots().expect("drawn")[0].stop;
-        assert_eq!((lit(&mut app, &f, &i), app.resting()), (Some(first), 0.0), "past the end the light goes round to the top");
+        assert_eq!(
+            (lit(&mut app, &f, &i), app.resting()),
+            (Some(first), 0.0),
+            "past the end the light goes round to the top"
+        );
         press(&mut app, Key::VolumeUp, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(last.stop), "and up from it round to the last control");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(last.stop),
+            "and up from it round to the last control"
+        );
         assert!(app.shows(&last, app.resting()), "which shows");
         let resting = app.resting();
         app.tick(5000);
@@ -442,27 +624,58 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Reboot, W, H, PPD);
         app.frame(&f, &i);
-        light_on(&mut app, &f, &i, Stop::Hit(Action::Confirm(Confirm::Reboot)));
+        light_on(
+            &mut app,
+            &f,
+            &i,
+            Stop::Hit(Action::Confirm(Confirm::Reboot)),
+        );
         assert!(press(&mut app, Key::Power, 0).is_empty());
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("请按住电源键"), "a short press says how");
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("请按住电源键"),
+            "a short press says how"
+        );
         app.key(Key::Power, 1000);
-        assert_eq!(app.deadline(1000), Some(1000 + CHORD_MS), "it waits for volume down first");
+        assert_eq!(
+            app.deadline(1000),
+            Some(1000 + CHORD_MS),
+            "it waits for volume down first"
+        );
         app.tick(1000 + CHORD_MS);
-        assert_eq!(app.deadline(1000 + CHORD_MS), Some(0), "then the knob moves while the key is held");
+        assert_eq!(
+            app.deadline(1000 + CHORD_MS),
+            Some(0),
+            "then the knob moves while the key is held"
+        );
         app.tick(1000 + SLIDE_MS / 2);
-        assert!((app.state.confirm - 0.5).abs() < 0.01, "half way after half the time: {}", app.state.confirm);
-        assert!(app.key_up(Key::Power, 1000 + SLIDE_MS / 2).is_empty(), "let go short of the end, nothing happens");
+        assert!(
+            (app.state.confirm - 0.5).abs() < 0.01,
+            "half way after half the time: {}",
+            app.state.confirm
+        );
+        assert!(
+            app.key_up(Key::Power, 1000 + SLIDE_MS / 2).is_empty(),
+            "let go short of the end, nothing happens"
+        );
         assert_eq!(app.state.confirm, 0.0, "and the knob goes back");
         app.key(Key::Power, 3000);
         app.tick(3000 + SLIDE_MS * 2);
         assert_eq!(app.state.confirm, 1.0, "the knob stops at the end");
-        assert_eq!(app.key_up(Key::Power, 3000 + SLIDE_MS * 2), vec![Effect::Reboot(TARGETS[0])], "let go there, it confirms");
+        assert_eq!(
+            app.key_up(Key::Power, 3000 + SLIDE_MS * 2),
+            vec![Effect::Reboot(TARGETS[0])],
+            "let go there, it confirms"
+        );
         assert_eq!(app.state.confirm, 0.0);
         app.key(Key::Power, 6000);
         app.tick(6000 + SLIDE_MS);
         app.touch(Touch::Down(W as f32 / 2.0, 200.0), &f, 6000 + SLIDE_MS);
         assert_eq!(app.state.confirm, 0.0, "a touch lets the knob go");
-        assert!(app.key_up(Key::Power, 6000 + SLIDE_MS).is_empty(), "and the key comes up to nothing");
+        assert!(
+            app.key_up(Key::Power, 6000 + SLIDE_MS).is_empty(),
+            "and the key comes up to nothing"
+        );
     }
 
     #[test]
@@ -470,21 +683,55 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Settings, W, H, PPD);
         app.frame(&f, &i);
-        light_on(&mut app, &f, &i, Stop::Hit(Action::Slider(Slider::Brightness)));
-        assert_eq!(app.state.brightness, SLIDER_START, "it starts a step from its left end");
+        light_on(
+            &mut app,
+            &f,
+            &i,
+            Stop::Hit(Action::Slider(Slider::Brightness)),
+        );
+        assert_eq!(
+            app.state.brightness, SLIDER_START,
+            "it starts a step from its left end"
+        );
         press(&mut app, Key::Power, 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("按音量键调节亮度，按电源键完成"));
-        assert!(press(&mut app, Key::VolumeUp, 0).is_empty(), "the panel shows the brightness");
-        assert!((app.state.brightness - (SLIDER_START + SLIDER_STEP)).abs() < 1e-5, "up turns it up");
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("按音量键调节亮度，按电源键完成")
+        );
+        assert!(
+            press(&mut app, Key::VolumeUp, 0).is_empty(),
+            "the panel shows the brightness"
+        );
+        assert!(
+            (app.state.brightness - (SLIDER_START + SLIDER_STEP)).abs() < 1e-5,
+            "up turns it up"
+        );
         press(&mut app, Key::VolumeDown, 0);
-        assert!((app.state.brightness - SLIDER_START).abs() < 1e-5, "down turns it down");
+        assert!(
+            (app.state.brightness - SLIDER_START).abs() < 1e-5,
+            "down turns it down"
+        );
         press(&mut app, Key::VolumeDown, 0);
-        assert_eq!(app.state.brightness, MIN_BRIGHTNESS, "no lower than the slider's floor");
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Slider(Slider::Brightness))), "the light stays on the slider");
+        assert_eq!(
+            app.state.brightness, MIN_BRIGHTNESS,
+            "no lower than the slider's floor"
+        );
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Slider(Slider::Brightness))),
+            "the light stays on the slider"
+        );
         press(&mut app, Key::Power, 0);
         press(&mut app, Key::VolumeDown, 0);
-        assert_eq!(app.state.brightness, MIN_BRIGHTNESS, "let go, the slider keeps its level");
-        assert_ne!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Slider(Slider::Brightness))), "and the keys move the light again");
+        assert_eq!(
+            app.state.brightness, MIN_BRIGHTNESS,
+            "let go, the slider keeps its level"
+        );
+        assert_ne!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Slider(Slider::Brightness))),
+            "and the keys move the light again"
+        );
     }
 
     #[test]
@@ -492,17 +739,38 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Settings, W, H, PPD);
         app.frame(&f, &i);
-        light_on(&mut app, &f, &i, Stop::Hit(Action::Slider(Slider::Vibration)));
+        light_on(
+            &mut app,
+            &f,
+            &i,
+            Stop::Hit(Action::Slider(Slider::Vibration)),
+        );
         press(&mut app, Key::Power, 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("按音量键调节振动强度，按电源键完成"));
-        assert_eq!(press(&mut app, Key::VolumeDown, 0), vec![Effect::Haptic], "each step taps at the strength reached");
-        assert_eq!(app.state.vibration, 0.0, "it starts a step from its left end, the lightest");
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("按音量键调节振动强度，按电源键完成")
+        );
+        assert_eq!(
+            press(&mut app, Key::VolumeDown, 0),
+            vec![Effect::Haptic],
+            "each step taps at the strength reached"
+        );
+        assert_eq!(
+            app.state.vibration, 0.0,
+            "it starts a step from its left end, the lightest"
+        );
         for _ in 0..20 {
             press(&mut app, Key::VolumeUp, 0);
         }
-        assert_eq!(app.state.vibration, 1.0, "up to its right end, the strongest");
+        assert_eq!(
+            app.state.vibration, 1.0,
+            "up to its right end, the strongest"
+        );
         press(&mut app, Key::Power, 0);
-        assert!(press(&mut app, Key::VolumeDown, 0).is_empty(), "let go, the keys move the light");
+        assert!(
+            press(&mut app, Key::VolumeDown, 0).is_empty(),
+            "let go, the keys move the light"
+        );
         assert_eq!(app.state.vibration, 1.0);
     }
 
@@ -513,19 +781,36 @@ mod tests {
         app.data_waiting(Some((0, Keys::Pattern)));
         app.frame(&f, &i);
         press(&mut app, Key::VolumeDown, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Dot(0)), "the grid's first dot is lit first");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Dot(0)),
+            "the grid's first dot is lit first"
+        );
         assert!(press(&mut app, Key::Power, 0).is_empty());
         assert_eq!(app.state.pattern, [0]);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("连接完成后，在最后一个点上再按一次电源键"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("连接完成后，在最后一个点上再按一次电源键")
+        );
         press(&mut app, Key::Power, 0);
-        assert!(app.state.pattern.is_empty(), "ended at one dot, the pattern is wiped");
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("请至少连接 4 个点"));
+        assert!(
+            app.state.pattern.is_empty(),
+            "ended at one dot, the pattern is wiped"
+        );
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("请至少连接 4 个点")
+        );
         press(&mut app, Key::Power, 0);
         press(&mut app, Key::VolumeDown, 0);
         press(&mut app, Key::VolumeDown, 0);
         assert_eq!(lit(&mut app, &f, &i), Some(Stop::Dot(2)));
         press(&mut app, Key::Power, 0);
-        assert_eq!(app.state.pattern, [0, 1, 2], "the dot passed straight over is joined on the way");
+        assert_eq!(
+            app.state.pattern,
+            [0, 1, 2],
+            "the dot passed straight over is joined on the way"
+        );
         for _ in 0..6 {
             press(&mut app, Key::VolumeDown, 0);
         }
@@ -535,11 +820,25 @@ mod tests {
         press(&mut app, Key::VolumeUp, 0);
         press(&mut app, Key::VolumeUp, 0);
         press(&mut app, Key::Power, 0);
-        assert_eq!(app.state.pattern, [0, 1, 2, 5, 8, 7, 6], "two along the row joins the one between first");
+        assert_eq!(
+            app.state.pattern,
+            [0, 1, 2, 5, 8, 7, 6],
+            "two along the row joins the one between first"
+        );
         press(&mut app, Key::VolumeDown, 0);
-        assert!(press(&mut app, Key::Power, 0).is_empty(), "a dot joined already is not joined again");
+        assert!(
+            press(&mut app, Key::Power, 0).is_empty(),
+            "a dot joined already is not joined again"
+        );
         press(&mut app, Key::VolumeUp, 0);
-        assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Unlock { user: 0, code: "1236987".into() }], "the last one joined ends it");
+        assert_eq!(
+            press(&mut app, Key::Power, 0),
+            vec![Effect::Unlock {
+                user: 0,
+                code: "1236987".into()
+            }],
+            "the last one joined ends it"
+        );
     }
 
     #[test]
@@ -554,7 +853,13 @@ mod tests {
         }
         assert_eq!(app.state.code, "2580");
         light_on(&mut app, &f, &i, Stop::Hit(Action::Type(Cap::Enter)));
-        assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Unlock { user: 0, code: "2580".into() }]);
+        assert_eq!(
+            press(&mut app, Key::Power, 0),
+            vec![Effect::Unlock {
+                user: 0,
+                code: "2580".into()
+            }]
+        );
     }
 
     #[test]
@@ -562,22 +867,52 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Advanced, W, H, PPD);
         tap(&mut app, &f, &i, Action::Open(Screen::Files));
-        app.set_files("/".into(), Ok(vec![entry("vendor", folder(12)), entry("init.rc", FileKind::File)]), LISTED);
+        app.set_files(
+            "/".into(),
+            Ok(vec![
+                entry("vendor", folder(12)),
+                entry("init.rc", FileKind::File),
+            ]),
+            LISTED,
+        );
         app.frame(&f, &i);
         press(&mut app, Key::VolumeDown, 0);
         assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::OpenEntry(0))));
         assert!(app.key(Key::Power, 1000).is_empty());
-        assert_eq!(app.deadline(1000), Some(1000 + CHORD_MS), "it waits for volume down first");
+        assert_eq!(
+            app.deadline(1000),
+            Some(1000 + CHORD_MS),
+            "it waits for volume down first"
+        );
         assert!(app.tick(1000 + CHORD_MS).is_empty());
-        assert_eq!(app.deadline(1000 + CHORD_MS), Some(1000 + LONG_PRESS_MS), "the press is timed from when it went down");
+        assert_eq!(
+            app.deadline(1000 + CHORD_MS),
+            Some(1000 + LONG_PRESS_MS),
+            "the press is timed from when it went down"
+        );
         assert!(app.tick(1000 + LONG_PRESS_MS - 1).is_empty());
-        assert_eq!(app.tick(1000 + LONG_PRESS_MS), vec![Effect::Haptic], "held long enough, the folder's page opens");
+        assert_eq!(
+            app.tick(1000 + LONG_PRESS_MS),
+            vec![Effect::Haptic],
+            "held long enough, the folder's page opens"
+        );
         assert_eq!(app.screen(), Screen::FileInfo);
-        assert_eq!(app.state.file.as_ref().map(|e| e.name.as_str()), Some("vendor"));
-        assert!(app.key_up(Key::Power, 1000 + LONG_PRESS_MS + 100).is_empty(), "and the key comes up to nothing");
+        assert_eq!(
+            app.state.file.as_ref().map(|e| e.name.as_str()),
+            Some("vendor")
+        );
+        assert!(
+            app.key_up(Key::Power, 1000 + LONG_PRESS_MS + 100)
+                .is_empty(),
+            "and the key comes up to nothing"
+        );
         app.key(Key::Back, 2000);
         assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::OpenEntry(0))));
-        assert_eq!(press(&mut app, Key::Power, 3000), vec![Effect::ReadDir("/vendor".into())], "a short press goes into the folder");
+        assert_eq!(
+            press(&mut app, Key::Power, 3000),
+            vec![Effect::ReadDir("/vendor".into())],
+            "a short press goes into the folder"
+        );
     }
 
     #[test]
@@ -593,11 +928,18 @@ mod tests {
         app.touch(Touch::Up, &f, 0);
         assert!(app.light(0.0).is_none(), "a touch puts the light out");
         press(&mut app, Key::VolumeDown, 0);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::About))), "the keys come back where they were");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::About))),
+            "the keys come back where they were"
+        );
         app.touch(Touch::Down(W as f32 / 2.0, 200.0), &f, 0);
         app.touch(Touch::Up, &f, 0);
         press(&mut app, Key::Power, 0);
-        assert!(!app.display_on(), "with the light out, power turns the panel off");
+        assert!(
+            !app.display_on(),
+            "with the light out, power turns the panel off"
+        );
         press(&mut app, Key::VolumeDown, 1000);
         assert!(!app.display_on(), "a volume key leaves the panel dark");
         press(&mut app, Key::Power, 1100);
@@ -611,18 +953,43 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.frame(&f, &i);
         app.key(Key::VolumeDown, 0);
-        assert_eq!(app.deadline(0), Some(CHORD_MS), "it waits for the power key first");
+        assert_eq!(
+            app.deadline(0),
+            Some(CHORD_MS),
+            "it waits for the power key first"
+        );
         app.tick(CHORD_MS);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))));
-        assert_eq!(app.deadline(CHORD_MS), Some(REPEAT_DELAY_MS), "and repeats as from when it went down");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search)))
+        );
+        assert_eq!(
+            app.deadline(CHORD_MS),
+            Some(REPEAT_DELAY_MS),
+            "and repeats as from when it went down"
+        );
         app.tick(REPEAT_DELAY_MS - 1);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))), "not held long enough yet");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search))),
+            "not held long enough yet"
+        );
         app.tick(REPEAT_DELAY_MS);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::About))));
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::About)))
+        );
         app.tick(REPEAT_DELAY_MS + REPEAT_MS);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Install))));
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Install)))
+        );
         app.key_up(Key::VolumeDown, REPEAT_DELAY_MS + REPEAT_MS + 10);
         app.tick(REPEAT_DELAY_MS + REPEAT_MS * 5);
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Install))), "let go, it stops");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Install))),
+            "let go, it stops"
+        );
     }
 }

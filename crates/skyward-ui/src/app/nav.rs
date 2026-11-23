@@ -29,18 +29,36 @@ impl App {
             return;
         }
         self.end_turn();
-        let Some(view) = self.shown.take() else { return };
-        let mut left = self.backdrop.take().unwrap_or_else(|| Canvas::new(self.w, self.h));
+        let Some(view) = self.shown.take() else {
+            return;
+        };
+        let mut left = self
+            .backdrop
+            .take()
+            .unwrap_or_else(|| Canvas::new(self.w, self.h));
         // The `<` comes up with the finger, before its page goes.
-        let view = View { pressing: None, ..view };
+        let view = View {
+            pressing: None,
+            ..view
+        };
         let t = self.theme();
         self.paint_page(&mut left, &t, None, &view);
         // A page left within the first frames of sliding in, before it was
         // drawn across, shows its colour where it was not drawn yet.
         if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < self.w) {
-            left.fill_rect(self.cols as f32, 0.0, (self.w - self.cols) as f32, self.h as f32, fr.bg);
+            left.fill_rect(
+                self.cols as f32,
+                0.0,
+                (self.w - self.cols) as f32,
+                self.h as f32,
+                fr.bg,
+            );
         }
-        self.turn = Some(Turn { back, left, spring: None });
+        self.turn = Some(Turn {
+            back,
+            left,
+            spring: None,
+        });
         self.dirty = true;
     }
 
@@ -60,7 +78,13 @@ impl App {
         // The home page is the page shown, or the one under the search.
         let home = self.stack.len() - if into { 1 } else { 2 };
         // On the way down the keyboard goes with the search page's frame.
-        let keyboard = if into { None } else { self.frame.as_ref().map(|fr| keyboard_strip(&self.theme(), fr)) };
+        let keyboard = if into {
+            None
+        } else {
+            self.frame
+                .as_ref()
+                .map(|fr| keyboard_strip(&self.theme(), fr))
+        };
         self.morph = Some(Morph {
             into,
             spring: Spring::new(now, (q - target) * 1000.0, speed * 1000.0, MORPH_PERIOD),
@@ -83,7 +107,8 @@ impl App {
         if self.stack.len() <= 1 {
             return fx;
         }
-        let morph = self.screen() == Screen::Search && self.stack[self.stack.len() - 2].0 == Screen::Home;
+        let morph =
+            self.screen() == Screen::Search && self.stack[self.stack.len() - 2].0 == Screen::Home;
         if morph {
             self.start_morph(false, now);
         }
@@ -113,6 +138,9 @@ impl App {
                 if let Some(up) = self.state.folder(Screen::Choose(place)).up() {
                     return vec![Effect::ReadPlace(place, up)];
                 }
+                // Leaving the chooser, not going up inside it, leaves queue
+                // mode too.
+                self.state.queue_add = false;
             }
             Screen::FileInfo => {
                 self.state.file = None;
@@ -121,7 +149,12 @@ impl App {
             // Changes not saved are given up only by going back again while
             // the warning shows.
             Screen::Editor => {
-                let changed = self.state.editor.as_ref().expect("the editor page shows a file").changed;
+                let changed = self
+                    .state
+                    .editor
+                    .as_ref()
+                    .expect("the editor page shows a file")
+                    .changed;
                 if changed && self.unsaved_warned.is_none_or(|at| now >= at + TOAST_MS) {
                     self.unsaved_warned = Some(now);
                     self.say(l.pick(texts::toast::back::UNSAVED), now);
@@ -156,7 +189,12 @@ impl App {
                 self.state.job = None;
             }
             Screen::Relabel => {
-                if self.state.relabel.as_ref().is_some_and(|j| j.outcome.is_none()) {
+                if self
+                    .state
+                    .relabel
+                    .as_ref()
+                    .is_some_and(|j| j.outcome.is_none())
+                {
                     self.say(l.pick(WAIT_OR_STOP), now);
                     return fx;
                 }
@@ -166,7 +204,12 @@ impl App {
             // partition may hold another filesystem, and what is to be done
             // to it is chosen afresh.
             Screen::PartWork => {
-                if self.state.part_work.as_ref().is_some_and(|w| w.outcome.is_none()) {
+                if self
+                    .state
+                    .part_work
+                    .as_ref()
+                    .is_some_and(|w| w.outcome.is_none())
+                {
                     self.say(l.pick(texts::toast::back::WAIT), now);
                     return fx;
                 }
@@ -176,10 +219,21 @@ impl App {
             Screen::RestoreBackup => {
                 self.state.restore = None;
                 self.state.asking_delete = false;
+                self.state.restore_password.clear();
             }
+            // A passphrase not used, or one just used, is not left typed.
+            Screen::BackupPassword => self.state.backup_password.clear(),
+            Screen::RestorePassword => self.state.restore_password.clear(),
+            Screen::RenameBackup => self.state.new_name.clear(),
             // The page stays while Skyward is updated: once downloaded, the
             // build is written at once, which nothing may cut short.
-            Screen::SkywardUpdate => match self.state.skyward_job.as_ref().filter(|j| j.outcome.is_none()).map(|j| j.stage) {
+            Screen::SkywardUpdate => match self
+                .state
+                .skyward_job
+                .as_ref()
+                .filter(|j| j.outcome.is_none())
+                .map(|j| j.stage)
+            {
                 Some(Some(SkywardStage::Write { .. })) => {
                     self.say(l.pick(texts::toast::back::WRITING), now);
                     return fx;
@@ -192,10 +246,18 @@ impl App {
             },
             // A restore that has begun writing cannot be stopped.
             Screen::BackupJob => {
-                let job = self.state.backup_job.as_ref().expect("the backup page shows work");
+                let job = self
+                    .state
+                    .backup_job
+                    .as_ref()
+                    .expect("the backup page shows work");
                 if job.outcome.is_none() {
                     let writing = job.restore && job.at.is_some_and(|a| !a.checking);
-                    let said = if writing { texts::toast::back::RESTORING } else { WAIT_OR_STOP };
+                    let said = if writing {
+                        texts::toast::back::RESTORING
+                    } else {
+                        WAIT_OR_STOP
+                    };
                     self.say(l.pick(said), now);
                     return fx;
                 }
@@ -207,7 +269,10 @@ impl App {
             match self.state.install {
                 // Checking a signature only reads the package, and stops
                 // when the page is left.
-                Install::Checking { stage: Some(Stage::Signature { .. }), .. } => {
+                Install::Checking {
+                    stage: Some(Stage::Signature { .. }),
+                    ..
+                } => {
                     self.state.install = Install::Ending;
                     fx.push(Effect::Cancel);
                 }
@@ -247,7 +312,9 @@ impl App {
                 }
                 // Rescue waits on for the computer's next command until
                 // its page is left.
-                Install::Finished { .. } | Install::Wiped(_) if self.state.source == Source::Rescue => {
+                Install::Finished { .. } | Install::Wiped(_)
+                    if self.state.source == Source::Rescue =>
+                {
                     self.state.install = Install::Ending;
                     fx.push(Effect::Cancel);
                 }
@@ -268,7 +335,9 @@ impl App {
         // changed what it holds.
         match self.screen() {
             Screen::Restore => fx.push(self.find_backups()),
-            Screen::Filesystem | Screen::Filesystems if left == Screen::PartWork => fx.push(Effect::ReadFilesystems),
+            Screen::Filesystem | Screen::Filesystems if left == Screen::PartWork => {
+                fx.push(Effect::ReadFilesystems)
+            }
             _ => {}
         }
         fx
@@ -290,7 +359,9 @@ impl App {
             Screen::Systems => vec![Effect::ReadSystems],
             Screen::Restore => vec![self.find_backups()],
             Screen::Files => vec![Effect::ReadDir(self.state.files.path.clone())],
-            Screen::Choose(place) if self.state.place_open(place) => vec![Effect::ReadPlace(place, self.state.folder(s).path.clone())],
+            Screen::Choose(place) if self.state.place_open(place) => {
+                vec![Effect::ReadPlace(place, self.state.folder(s).path.clone())]
+            }
             Screen::Search => {
                 self.state.search.clear();
                 self.state.layer = Layer::Letters;
@@ -305,23 +376,41 @@ impl App {
                     Vec::new()
                 }
             }
-            Screen::Decrypt if matches!(self.state.data, Data::Closed | Data::Failed(_)) => self.open_data(),
+            Screen::Decrypt if matches!(self.state.data, Data::Closed | Data::Failed(_)) => {
+                self.open_data()
+            }
             // As the stock updater does, the page asks the update server as
             // it opens, once a network is joined and nothing has been heard.
             Screen::Update => {
                 let mut fx = vec![Effect::ReadUpdate];
-                if self.state.update_server && matches!(self.state.check, Check::Idle | Check::Failed(_)) && self.state.online() {
+                if self.state.update_server
+                    && matches!(self.state.check, Check::Idle | Check::Failed(_))
+                    && self.state.online()
+                {
                     self.state.check = Check::Asking;
                     fx.push(Effect::CheckUpdate);
                 }
                 fx
             }
             // Skyward's own page asks GitHub the same way.
-            Screen::SkywardUpdate if matches!(self.state.skyward_check, SkywardCheck::Idle | SkywardCheck::Failed(_)) && self.state.online() => {
+            Screen::SkywardUpdate
+                if matches!(
+                    self.state.skyward_check,
+                    SkywardCheck::Idle | SkywardCheck::Failed(_)
+                ) && self.state.online() =>
+            {
                 self.state.skyward_check = SkywardCheck::Asking;
                 vec![Effect::CheckSkyward]
             }
-            Screen::Wlan if self.state.wlan.as_ref().is_some_and(|w| w.power == Power::On) => vec![Effect::ScanWlan],
+            Screen::Wlan
+                if self
+                    .state
+                    .wlan
+                    .as_ref()
+                    .is_some_and(|w| w.power == Power::On) =>
+            {
+                vec![Effect::ScanWlan]
+            }
             _ => Vec::new(),
         }
     }
@@ -341,7 +430,11 @@ mod tests {
         tap_back(&mut app, &f, &i, 0);
         assert_eq!(app.screen(), Screen::Home);
         app.key(Key::Back, 0);
-        assert_eq!(app.screen(), Screen::Home, "back on the first page stays there");
+        assert_eq!(
+            app.screen(),
+            Screen::Home,
+            "back on the first page stays there"
+        );
     }
 
     #[test]
@@ -384,7 +477,10 @@ mod tests {
             check_slide(&mid, &mount, &home, y, slid(false, 50));
         }
         let (front, _, _) = slid(false, 50);
-        assert!((front as f32 / W as f32 - 0.728).abs() < 0.01, "about three quarters of the way in after 50 ms: {front}");
+        assert!(
+            (front as f32 / W as f32 - 0.728).abs() < 0.01,
+            "about three quarters of the way in after 50 ms: {front}"
+        );
 
         tap_back(&mut app, &f, &i, 4000);
         assert_eq!(app.screen(), Screen::Home);
@@ -396,7 +492,13 @@ mod tests {
         assert!(app.turn.is_none());
         let home = shot(&c);
         for y in [H / 3, H / 2, H - 200] {
-            check_slide(&first, &mount, &home, y, (0, W / 4, ((1.0 - BEHIND_DIM) * 256.0).round() as u32));
+            check_slide(
+                &first,
+                &mount,
+                &home,
+                y,
+                (0, W / 4, ((1.0 - BEHIND_DIM) * 256.0).round() as u32),
+            );
             check_slide(&mid, &mount, &home, y, slid(true, 60));
         }
     }
@@ -418,9 +520,21 @@ mod tests {
         let (front, behind, keep) = slid(false, 50);
         let at = |c: &Canvas, x: u32, y: u32| c.data[((y * W + x) * 4) as usize] as u32;
         let y = H - 3;
-        assert_eq!(at(&mid, front + 5, y), (at(&home, front + 5 + behind, y) * keep) >> 8, "the corner's tip shows the page behind");
-        assert_eq!(at(&mid, front + 140, y), at(&mount, 140, y), "past the corner's curve the page in front is whole");
-        assert_eq!(at(&mid, front + 5, H / 2), at(&mount, 5, H / 2), "between the corners its edge is straight");
+        assert_eq!(
+            at(&mid, front + 5, y),
+            (at(&home, front + 5 + behind, y) * keep) >> 8,
+            "the corner's tip shows the page behind"
+        );
+        assert_eq!(
+            at(&mid, front + 140, y),
+            at(&mount, 140, y),
+            "past the corner's curve the page in front is whole"
+        );
+        assert_eq!(
+            at(&mid, front + 5, H / 2),
+            at(&mount, 5, H / 2),
+            "between the corners its edge is straight"
+        );
     }
 
     #[test]
@@ -445,7 +559,13 @@ mod tests {
 
     #[test]
     fn every_unfinished_entry_now_opens_its_page() {
-        let (f, i) = (fonts(), DeviceInfo { slot: Some(Slot::B), ..info() });
+        let (f, i) = (
+            fonts(),
+            DeviceInfo {
+                slot: Some(Slot::B),
+                ..info()
+            },
+        );
         let routes: [(Screen, Screen); 13] = [
             (Screen::Home, Screen::Search),
             (Screen::Home, Screen::Backup),

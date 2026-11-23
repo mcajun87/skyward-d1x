@@ -94,13 +94,32 @@ impl Object<Binder> for Told {
         element::HASH
     }
 
-    fn call(&self, _with: &Binder, code: u32, read: &mut Reader) -> Result<Option<Parcel>, Refusal> {
+    fn call(
+        &self,
+        _with: &Binder,
+        code: u32,
+        read: &mut Reader,
+    ) -> Result<Option<Parcel>, Refusal> {
         if code != element::STATE_CHANGED {
             return Ok(None);
         }
-        let (connected, why) = element::state_changed(read).map_err(|e| Refusal::illegal_argument(format!("{e:#}")))?;
+        let (connected, why) = element::state_changed(read)
+            .map_err(|e| Refusal::illegal_argument(format!("{e:#}")))?;
         self.connected.store(connected, Ordering::SeqCst);
-        let _ = skyward_sys::kmsg(&format!("omapi: {} is {}{}", self.name, if connected { "connected" } else { "not connected" }, if why.is_empty() { String::new() } else { format!(" ({why})") }));
+        let _ = skyward_sys::kmsg(&format!(
+            "omapi: {} is {}{}",
+            self.name,
+            if connected {
+                "connected"
+            } else {
+                "not connected"
+            },
+            if why.is_empty() {
+                String::new()
+            } else {
+                format!(" ({why})")
+            }
+        ));
         Ok(Some(status::went_through()))
     }
 }
@@ -131,18 +150,33 @@ struct State {
 impl Terminal {
     fn new(name: &str, objects: &Arc<Objects<Binder>>) -> Arc<Terminal> {
         let connected = Arc::new(AtomicBool::new(false));
-        let told = objects.keep(Arc::new(Told { name: name.to_string(), connected: connected.clone() }));
-        let state = Mutex::new(State { own_applet_on_basic: true, ..State::default() });
-        Arc::new(Terminal { name: name.to_string(), objects: objects.clone(), connected, told, state })
+        let told = objects.keep(Arc::new(Told {
+            name: name.to_string(),
+            connected: connected.clone(),
+        }));
+        let state = Mutex::new(State {
+            own_applet_on_basic: true,
+            ..State::default()
+        });
+        Arc::new(Terminal {
+            name: name.to_string(),
+            objects: objects.clone(),
+            connected,
+            told,
+            state,
+        })
     }
 
     fn state(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state.lock().expect("nothing panics while a secure element's state is held")
+        self.state
+            .lock()
+            .expect("nothing panics while a secure element's state is held")
     }
 
     /// The secure element's own service.
     fn element<'a>(&self, binder: &'a Binder) -> Result<Element<'a>> {
-        Element::find(binder, &self.name)?.with_context(|| format!("nothing has registered the secure element {}", self.name))
+        Element::find(binder, &self.name)?
+            .with_context(|| format!("nothing has registered the secure element {}", self.name))
     }
 
     /// Have the secure element's own service start, where it has not been
@@ -158,14 +192,20 @@ impl Terminal {
         }
         let until = Instant::now() + CONNECTS_IN;
         while !self.connected.load(Ordering::SeqCst) {
-            anyhow::ensure!(Instant::now() < until, "the secure element {} is not connected", self.name);
+            anyhow::ensure!(
+                Instant::now() < until,
+                "the secure element {} is not connected",
+                self.name
+            );
             std::thread::sleep(Duration::from_millis(10));
         }
         Ok(())
     }
 
     fn present(&self, binder: &Binder) -> bool {
-        self.element(binder).and_then(|e| e.present()).unwrap_or(false)
+        self.element(binder)
+            .and_then(|e| e.present())
+            .unwrap_or(false)
     }
 
     /// What the chip says of itself as it is powered up, where it is
@@ -174,7 +214,10 @@ impl Terminal {
         if !self.connected.load(Ordering::SeqCst) {
             return None;
         }
-        self.element(binder).and_then(|e| e.atr()).ok().filter(|atr| !atr.is_empty())
+        self.element(binder)
+            .and_then(|e| e.atr())
+            .ok()
+            .filter(|atr| !atr.is_empty())
     }
 
     /// Send `command` and give the answer whole: what the secure element
@@ -189,7 +232,9 @@ impl Terminal {
         let mut command = command.to_vec();
         let mut answer = send(&command)?;
         loop {
-            match apdu::next(&command, &answer).ok_or_else(|| io("the secure element answered less than how the command went"))? {
+            match apdu::next(&command, &answer)
+                .ok_or_else(|| io("the secure element answered less than how the command went"))?
+            {
                 Next::Done => return Ok(answer),
                 Next::Again(again) => {
                     command = again;
@@ -203,23 +248,44 @@ impl Terminal {
     /// Open a channel for `session` on the applet named `name`, or on the
     /// one the secure element selects by itself: the basic channel, or a
     /// logical one. None where the secure element has none to give.
-    fn open(self: &Arc<Self>, binder: &Binder, session: &Arc<Session>, name: Option<&[u8]>, answers: u8, logical: bool) -> Result<Option<Arc<Channel>>, Refusal> {
+    fn open(
+        self: &Arc<Self>,
+        binder: &Binder,
+        session: &Arc<Session>,
+        name: Option<&[u8]>,
+        answers: u8,
+        logical: bool,
+    ) -> Result<Option<Arc<Channel>>, Refusal> {
         self.start(binder).map_err(|e| io(format!("{e:#}")))?;
         let mut state = self.state();
-        if !logical && (state.channels.contains_key(&BASIC) || (name.is_none() && !state.own_applet_on_basic)) {
+        if !logical
+            && (state.channels.contains_key(&BASIC)
+                || (name.is_none() && !state.own_applet_on_basic))
+        {
             return Ok(None);
         }
         let element = self.element(binder).map_err(|e| io(format!("{e:#}")))?;
         let asked = name.unwrap_or_default();
         let opened = match logical {
             true => element.open_logical(asked, answers),
-            false => element.open_basic(asked, answers).map(|answer| (BASIC, answer)),
+            false => element
+                .open_basic(asked, answers)
+                .map(|answer| (BASIC, answer)),
         };
         let (number, answer) = match opened {
             Ok(opened) => opened,
             Err(NotOpened::NoChannel) => return Ok(None),
-            Err(NotOpened::NoSuchApplet) => return Err(Refusal::service(NO_SUCH_ELEMENT_ERROR, "the secure element has no such applet")),
-            Err(NotOpened::Unsupported) => return Err(Refusal::unsupported("the secure element opens no channel this way")),
+            Err(NotOpened::NoSuchApplet) => {
+                return Err(Refusal::service(
+                    NO_SUCH_ELEMENT_ERROR,
+                    "the secure element has no such applet",
+                ));
+            }
+            Err(NotOpened::Unsupported) => {
+                return Err(Refusal::unsupported(
+                    "the secure element opens no channel this way",
+                ));
+            }
             Err(NotOpened::Failed(why)) => return Err(io(why)),
         };
         let channel = Arc::new(Channel {
@@ -245,7 +311,10 @@ impl Terminal {
         if self.connected.load(Ordering::SeqCst)
             && let Err(e) = self.element(binder).and_then(|e| e.close(number))
         {
-            let _ = skyward_sys::kmsg(&format!("omapi: channel {number} of {} did not close: {e:#}", self.name));
+            let _ = skyward_sys::kmsg(&format!(
+                "omapi: channel {number} of {} did not close: {e:#}",
+                self.name
+            ));
         }
         state.channels.remove(&number);
     }
@@ -255,7 +324,9 @@ impl Terminal {
     /// by itself.
     fn closed(&self, session: &Session) {
         let mut state = self.state();
-        state.sessions.retain(|s| !std::ptr::eq(s.as_ref(), session));
+        state
+            .sessions
+            .retain(|s| !std::ptr::eq(s.as_ref(), session));
         if state.sessions.is_empty() {
             state.own_applet_on_basic = true;
         }
@@ -280,7 +351,12 @@ impl Object<Binder> for Service {
         HASH
     }
 
-    fn call(&self, _with: &Binder, code: u32, read: &mut Reader) -> Result<Option<Parcel>, Refusal> {
+    fn call(
+        &self,
+        _with: &Binder,
+        code: u32,
+        read: &mut Reader,
+    ) -> Result<Option<Parcel>, Refusal> {
         const GET_READERS: u32 = 1;
         const GET_READER: u32 = 2;
         const IS_NFC_EVENT_ALLOWED: u32 = 3;
@@ -292,9 +368,19 @@ impl Object<Binder> for Service {
                 reply
             }
             GET_READER => {
-                let name = read.string().map_err(|e| Refusal::illegal_argument(format!("{e:#}")))?;
-                let terminal = self.terminals.iter().find(|t| t.name == name).ok_or_else(|| Refusal::illegal_argument(format!("Reader: {name} not supported")))?;
-                hands(Some(terminal.objects.lend(Arc::new(Read { terminal: terminal.clone() }))))
+                let name = read
+                    .string()
+                    .map_err(|e| Refusal::illegal_argument(format!("{e:#}")))?;
+                let terminal = self
+                    .terminals
+                    .iter()
+                    .find(|t| t.name == name)
+                    .ok_or_else(|| {
+                        Refusal::illegal_argument(format!("Reader: {name} not supported"))
+                    })?;
+                hands(Some(terminal.objects.lend(Arc::new(Read {
+                    terminal: terminal.clone(),
+                }))))
             }
             // Which apps may hear of what the secure element does over NFC
             // is told from rules a recovery, which runs no app, does not
@@ -327,7 +413,12 @@ impl Object<Binder> for Read {
         HASH
     }
 
-    fn call(&self, with: &Binder, code: u32, _read: &mut Reader) -> Result<Option<Parcel>, Refusal> {
+    fn call(
+        &self,
+        with: &Binder,
+        code: u32,
+        _read: &mut Reader,
+    ) -> Result<Option<Parcel>, Refusal> {
         const IS_SECURE_ELEMENT_PRESENT: u32 = 1;
         const OPEN_SESSION: u32 = 2;
         const CLOSE_SESSIONS: u32 = 3;
@@ -340,7 +431,12 @@ impl Object<Binder> for Read {
                 if !terminal.present(with) {
                     return Err(io("Secure Element is not present."));
                 }
-                let session = Arc::new(Session { terminal: terminal.clone(), atr: terminal.atr(with), closed: AtomicBool::new(false), channels: Mutex::new(Vec::new()) });
+                let session = Arc::new(Session {
+                    terminal: terminal.clone(),
+                    atr: terminal.atr(with),
+                    closed: AtomicBool::new(false),
+                    channels: Mutex::new(Vec::new()),
+                });
                 terminal.state().sessions.push(session.clone());
                 hands(Some(terminal.objects.lend(session)))
             }
@@ -368,7 +464,9 @@ struct Session {
 
 impl Session {
     fn channels(&self) -> std::sync::MutexGuard<'_, Vec<Arc<Channel>>> {
-        self.channels.lock().expect("nothing panics while a session's channels are held")
+        self.channels
+            .lock()
+            .expect("nothing panics while a session's channels are held")
     }
 
     fn close_channels(&self, binder: &Binder) {
@@ -387,7 +485,12 @@ impl Session {
     /// Open a channel as a program asks for one: on the applet it names,
     /// saying what it wants back of it, and handing over the object it
     /// would be told through of the channel closing.
-    fn open(self: &Arc<Self>, binder: &Binder, read: &mut Reader, logical: bool) -> Result<Parcel, Refusal> {
+    fn open(
+        self: &Arc<Self>,
+        binder: &Binder,
+        read: &mut Reader,
+        logical: bool,
+    ) -> Result<Parcel, Refusal> {
         let taken = |e: anyhow::Error| Refusal::illegal_argument(format!("{e:#}"));
         let name = read.opt_blob().map_err(taken)?.unwrap_or_default();
         let answers = read.i32().map_err(taken)? as u8;
@@ -399,10 +502,14 @@ impl Session {
             return Err(Refusal::null_pointer("listener must not be null"));
         }
         if !apdu::answers_taken(answers) {
-            return Err(Refusal::unsupported(format!("p2 not supported: {answers:02x}")));
+            return Err(Refusal::unsupported(format!(
+                "p2 not supported: {answers:02x}"
+            )));
         }
         let name = apdu::name(&name).map_err(refused)?;
-        let Some(channel) = self.terminal.open(binder, self, name, answers, logical)? else { return Ok(hands(None)) };
+        let Some(channel) = self.terminal.open(binder, self, name, answers, logical)? else {
+            return Ok(hands(None));
+        };
         self.channels().push(channel.clone());
         Ok(hands(Some(self.terminal.objects.lend(channel))))
     }
@@ -430,7 +537,15 @@ impl Object<Binder> for Session {
         const OPEN_LOGICAL_CHANNEL: u32 = 6;
         // A session is found again among its secure element's, to hand a
         // channel the session it belongs to.
-        let whole = || self.terminal.state().sessions.iter().find(|s| std::ptr::eq(s.as_ref(), self)).cloned().ok_or_else(|| Refusal::illegal_state("Session is closed"));
+        let whole = || {
+            self.terminal
+                .state()
+                .sessions
+                .iter()
+                .find(|s| std::ptr::eq(s.as_ref(), self))
+                .cloned()
+                .ok_or_else(|| Refusal::illegal_state("Session is closed"))
+        };
         Ok(Some(match code {
             GET_ATR => gives(self.atr.as_deref()),
             CLOSE => {
@@ -470,7 +585,9 @@ struct Channel {
 
 impl Channel {
     fn answer(&self) -> std::sync::MutexGuard<'_, Vec<u8>> {
-        self.answer.lock().expect("nothing panics while an applet's answer is held")
+        self.answer
+            .lock()
+            .expect("nothing panics while an applet's answer is held")
     }
 
     fn close(&self, binder: &Binder) {
@@ -487,7 +604,9 @@ impl Channel {
         }
         self.terminal.close(binder, self.number);
         if let Some(session) = self.session.upgrade() {
-            session.channels().retain(|c| !std::ptr::eq(c.as_ref(), self));
+            session
+                .channels()
+                .retain(|c| !std::ptr::eq(c.as_ref(), self));
         }
     }
 
@@ -501,7 +620,8 @@ impl Channel {
     fn transmit(&self, binder: &Binder, mut command: Vec<u8>) -> Result<Vec<u8>, Refusal> {
         self.open()?;
         apdu::check(&command).map_err(refused)?;
-        command[0] = apdu::on_channel(command[0], self.number).ok_or_else(|| Refusal::illegal_argument("Channel number must be within [0..19]"))?;
+        command[0] = apdu::on_channel(command[0], self.number)
+            .ok_or_else(|| Refusal::illegal_argument("Channel number must be within [0..19]"))?;
         self.terminal.transmit(binder, &command)
     }
 
@@ -509,8 +629,13 @@ impl Channel {
     /// name; says whether there was one.
     fn select_next(&self, binder: &Binder) -> Result<bool, Refusal> {
         self.open()?;
-        let name = self.name.as_deref().filter(|n| !n.is_empty()).ok_or_else(|| Refusal::unsupported("No aid given"))?;
-        let select = apdu::select(name, self.number, true).ok_or_else(|| Refusal::illegal_argument("Channel number must be within [0..19]"))?;
+        let name = self
+            .name
+            .as_deref()
+            .filter(|n| !n.is_empty())
+            .ok_or_else(|| Refusal::unsupported("No aid given"))?;
+        let select = apdu::select(name, self.number, true)
+            .ok_or_else(|| Refusal::illegal_argument("Channel number must be within [0..19]"))?;
         let answer = self.terminal.transmit(binder, &select)?;
         match apdu::selected(&answer) {
             Selected::Another => {
@@ -555,7 +680,10 @@ impl Object<Binder> for Channel {
                 None => gives(None),
             },
             TRANSMIT => {
-                let command = read.opt_blob().map_err(|e| Refusal::illegal_argument(format!("{e:#}")))?.ok_or_else(|| Refusal::null_pointer("Command must not be null"))?;
+                let command = read
+                    .opt_blob()
+                    .map_err(|e| Refusal::illegal_argument(format!("{e:#}")))?
+                    .ok_or_else(|| Refusal::null_pointer("Command must not be null"))?;
                 gives(Some(&self.transmit(with, command)?))
             }
             SELECT_NEXT => says(self.select_next(with)?),
@@ -579,7 +707,10 @@ const THREADS: usize = 2;
 /// Gives the readers' names.
 pub fn start() -> Result<Vec<String>> {
     let objects: Arc<Objects<Binder>> = Arc::new(Objects::default());
-    let binder = Arc::new(Binder::serving(objects.clone()).context("open the driver to serve the secure element service through")?);
+    let binder = Arc::new(
+        Binder::serving(objects.clone())
+            .context("open the driver to serve the secure element service through")?,
+    );
     for thread in 0..THREADS {
         let taking = binder.clone();
         std::thread::Builder::new()
@@ -591,9 +722,15 @@ pub fn start() -> Result<Vec<String>> {
             .context("start a thread to take the secure element service's calls")?;
     }
     let prefix = format!("{}/", element::INTERFACE);
-    let mut names: Vec<String> = skyward_binder::service::names(&binder)?.into_iter().filter_map(|name| name.strip_prefix(&prefix).map(str::to_string)).collect();
+    let mut names: Vec<String> = skyward_binder::service::names(&binder)?
+        .into_iter()
+        .filter_map(|name| name.strip_prefix(&prefix).map(str::to_string))
+        .collect();
     names.sort_by_key(|name| (!name.starts_with(EMBEDDED), name.clone()));
-    let terminals: Vec<Arc<Terminal>> = names.iter().map(|name| Terminal::new(name, &objects)).collect();
+    let terminals: Vec<Arc<Terminal>> = names
+        .iter()
+        .map(|name| Terminal::new(name, &objects))
+        .collect();
     for terminal in &terminals {
         // A secure element that does not connect now is asked again when
         // a program first uses it.

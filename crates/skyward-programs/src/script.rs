@@ -4,7 +4,7 @@
 //! does when something happens, which is where a program it does not start
 //! by itself is started.
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 
 /// A program init runs, as a `service` section describes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -98,26 +98,52 @@ pub fn read(text: &str) -> Result<Script> {
         let Some(first) = words.first() else { continue };
         match first.as_str() {
             "import" => {
-                ensure!(words.len() == 2, "line {number}: an import names one script");
+                ensure!(
+                    words.len() == 2,
+                    "line {number}: an import names one script"
+                );
                 script.imports.push(words[1].clone());
                 section = Section::None;
             }
             "service" => {
-                ensure!(words.len() >= 3, "line {number}: a service has a name and a program");
-                script.programs.push(Program { name: words[1].clone(), path: words[2].clone(), args: words[3..].to_vec(), ..Program::default() });
+                ensure!(
+                    words.len() >= 3,
+                    "line {number}: a service has a name and a program"
+                );
+                script.programs.push(Program {
+                    name: words[1].clone(),
+                    path: words[2].clone(),
+                    args: words[3..].to_vec(),
+                    ..Program::default()
+                });
                 section = Section::Program;
             }
             "on" => {
-                script.actions.push(Action { triggers: triggers(&words[1..]).with_context(|| format!("line {number}"))?, commands: Vec::new() });
+                script.actions.push(Action {
+                    triggers: triggers(&words[1..]).with_context(|| format!("line {number}"))?,
+                    commands: Vec::new(),
+                });
                 section = Section::Action;
             }
             _ => match section {
                 Section::Program => {
-                    let program = script.programs.last_mut().expect("a service section has begun");
-                    option(program, &words).with_context(|| format!("line {number}, of the service {}", program.name))?;
+                    let program = script
+                        .programs
+                        .last_mut()
+                        .expect("a service section has begun");
+                    option(program, &words).with_context(|| {
+                        format!("line {number}, of the service {}", program.name)
+                    })?;
                 }
-                Section::Action => script.actions.last_mut().expect("an on section has begun").commands.push(words),
-                Section::None => bail!("line {number}: {first} begins no section, and no section has begun"),
+                Section::Action => script
+                    .actions
+                    .last_mut()
+                    .expect("an on section has begun")
+                    .commands
+                    .push(words),
+                Section::None => {
+                    bail!("line {number}: {first} begins no section, and no section has begun")
+                }
             },
         }
     }
@@ -153,13 +179,14 @@ fn lines(text: &str) -> Result<Vec<(usize, Vec<String>)>> {
                 began = number;
             }
             ' ' | '\t' | '\r' => words.extend(word.take()),
-            '#' if word.is_none() => {
-                while chars.next_if(|&c| c != '\n').is_some() {}
-            }
+            '#' if word.is_none() => while chars.next_if(|&c| c != '\n').is_some() {},
             '"' => {
                 let quoted = word.get_or_insert_with(String::new);
                 loop {
-                    match chars.next().with_context(|| format!("line {began}: a quote is not closed"))? {
+                    match chars
+                        .next()
+                        .with_context(|| format!("line {began}: a quote is not closed"))?
+                    {
                         '"' => break,
                         '\n' => {
                             number += 1;
@@ -169,7 +196,10 @@ fn lines(text: &str) -> Result<Vec<(usize, Vec<String>)>> {
                     }
                 }
             }
-            '\\' => match chars.next().with_context(|| format!("line {began}: a backslash ends the script"))? {
+            '\\' => match chars
+                .next()
+                .with_context(|| format!("line {began}: a backslash ends the script"))?
+            {
                 '\n' => {
                     number += 1;
                     while chars.next_if(|&c| c == ' ' || c == '\t').is_some() {}
@@ -198,14 +228,20 @@ fn lines(text: &str) -> Result<Vec<(usize, Vec<String>)>> {
 
 /// The triggers of an `on` line, which `&&` stands between.
 fn triggers(words: &[String]) -> Result<Vec<String>> {
-    ensure!(words.len() % 2 == 1, "an on section names what it waits for, one trigger or several joined by &&");
+    ensure!(
+        words.len() % 2 == 1,
+        "an on section names what it waits for, one trigger or several joined by &&"
+    );
     let mut out = Vec::new();
     for (index, word) in words.iter().enumerate() {
         if index % 2 == 0 {
             ensure!(word != "&&", "a trigger is missing before &&");
             out.push(word.clone());
         } else {
-            ensure!(word == "&&", "the triggers of an on section are joined by &&");
+            ensure!(
+                word == "&&",
+                "the triggers of an on section are joined by &&"
+            );
         }
     }
     Ok(out)
@@ -234,7 +270,10 @@ fn option(program: &mut Program, words: &[String]) -> Result<()> {
             program.environment.push((rest[0].clone(), rest[1].clone()));
         }
         "interface" => {
-            ensure!(rest.len() == 2, "interface gives an interface and which of them it is");
+            ensure!(
+                rest.len() == 2,
+                "interface gives an interface and which of them it is"
+            );
             // A service of the newer kind is written as `aidl` and its whole
             // name; one of the older kind as its interface and its instance.
             program.interfaces.push(match rest[0].as_str() {
@@ -260,7 +299,10 @@ fn socket(words: &[String]) -> Result<Socket> {
         Some("stream") => SocketKind::Stream,
         Some("dgram") => SocketKind::Dgram,
         Some("seqpacket") => SocketKind::Seqpacket,
-        other => bail!("a socket of the kind {} is none init makes", other.unwrap_or_default()),
+        other => bail!(
+            "a socket of the kind {} is none init makes",
+            other.unwrap_or_default()
+        ),
     };
     let (mut passcred, mut listen) = (false, false);
     for also in said {
@@ -270,8 +312,17 @@ fn socket(words: &[String]) -> Result<Socket> {
             other => bail!("init does nothing called {other} to a socket"),
         }
     }
-    let mode = u32::from_str_radix(&words[2], 8).with_context(|| format!("the socket's mode {} is not an octal number", words[2]))?;
-    Ok(Socket { name: words[0].clone(), kind, passcred, listen, mode, user: words.get(3).cloned(), group: words.get(4).cloned() })
+    let mode = u32::from_str_radix(&words[2], 8)
+        .with_context(|| format!("the socket's mode {} is not an octal number", words[2]))?;
+    Ok(Socket {
+        name: words[0].clone(),
+        kind,
+        passcred,
+        listen,
+        mode,
+        user: words.get(3).cloned(),
+        group: words.get(4).cloned(),
+    })
 }
 
 #[cfg(test)]
@@ -301,14 +352,47 @@ mod tests {
              \x20   oneshot\n",
         )
         .unwrap();
-        let [keymint, weaver] = &script.programs[..] else { panic!("two services") };
-        assert_eq!((keymint.name.as_str(), keymint.path.as_str()), ("vendor.keymint-qti", "/vendor/bin/hw/android.hardware.security.keymint-service-qti"));
-        assert_eq!((keymint.user.as_deref(), &keymint.groups[..], &keymint.classes[..]), (Some("system"), &strings(&["system", "drmrpc"])[..], &strings(&["early_hal"])[..]));
-        assert_eq!((keymint.capabilities.as_ref(), keymint.disabled, keymint.oneshot), (None, false, false), "a section says only what is not as init has it by itself");
+        let [keymint, weaver] = &script.programs[..] else {
+            panic!("two services")
+        };
+        assert_eq!(
+            (keymint.name.as_str(), keymint.path.as_str()),
+            (
+                "vendor.keymint-qti",
+                "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+            )
+        );
+        assert_eq!(
+            (
+                keymint.user.as_deref(),
+                &keymint.groups[..],
+                &keymint.classes[..]
+            ),
+            (
+                Some("system"),
+                &strings(&["system", "drmrpc"])[..],
+                &strings(&["early_hal"])[..]
+            )
+        );
+        assert_eq!(
+            (
+                keymint.capabilities.as_ref(),
+                keymint.disabled,
+                keymint.oneshot
+            ),
+            (None, false, false),
+            "a section says only what is not as init has it by itself"
+        );
         assert_eq!(weaver.args, ["--instance", "default"]);
         assert_eq!(weaver.classes, ["hal", "late_start"]);
-        assert_eq!(weaver.capabilities.as_deref(), Some(&strings(&["WAKE_ALARM"])[..]));
-        assert_eq!(weaver.interfaces, ["android.hardware.weaver.IWeaver/default"]);
+        assert_eq!(
+            weaver.capabilities.as_deref(),
+            Some(&strings(&["WAKE_ALARM"])[..])
+        );
+        assert_eq!(
+            weaver.interfaces,
+            ["android.hardware.weaver.IWeaver/default"]
+        );
         assert!(weaver.disabled && weaver.oneshot);
     }
 
@@ -316,7 +400,13 @@ mod tests {
     fn a_program_with_no_class_is_of_the_default_one_and_root_where_it_names_no_user() {
         let script = read("service vendor.qseecomd /vendor/bin/qseecomd\n").unwrap();
         assert_eq!(script.programs[0].classes, ["default"]);
-        assert_eq!((script.programs[0].user.as_ref(), script.programs[0].groups.len()), (None, 0));
+        assert_eq!(
+            (
+                script.programs[0].user.as_ref(),
+                script.programs[0].groups.len()
+            ),
+            (None, 0)
+        );
     }
 
     #[test]
@@ -333,21 +423,67 @@ mod tests {
         assert_eq!(
             program.sockets,
             [
-                Socket { name: "ssgtzd".into(), kind: SocketKind::Stream, passcred: false, listen: false, mode: 0o660, user: Some("system".into()), group: Some("system".into()) },
-                Socket { name: "notify".into(), kind: SocketKind::Dgram, passcred: true, listen: false, mode: 0o666, user: None, group: None },
-                Socket { name: "taken".into(), kind: SocketKind::Seqpacket, passcred: true, listen: true, mode: 0o600, user: Some("root".into()), group: None },
+                Socket {
+                    name: "ssgtzd".into(),
+                    kind: SocketKind::Stream,
+                    passcred: false,
+                    listen: false,
+                    mode: 0o660,
+                    user: Some("system".into()),
+                    group: Some("system".into())
+                },
+                Socket {
+                    name: "notify".into(),
+                    kind: SocketKind::Dgram,
+                    passcred: true,
+                    listen: false,
+                    mode: 0o666,
+                    user: None,
+                    group: None
+                },
+                Socket {
+                    name: "taken".into(),
+                    kind: SocketKind::Seqpacket,
+                    passcred: true,
+                    listen: true,
+                    mode: 0o600,
+                    user: Some("root".into()),
+                    group: None
+                },
             ]
         );
-        assert_eq!(program.environment, [("LD_PRELOAD".to_string(), "/vendor/lib64/lib a.so".to_string())], "a quoted value keeps its blanks");
-        assert!(read("service a /a\n    socket a pipe 0660\n").is_err(), "no such kind of socket");
-        assert!(read("service a /a\n    socket a stream+nonblock 0660\n").is_err(), "nothing init does to a socket");
-        assert!(read("service a /a\n    socket a stream rw\n").is_err(), "a mode that is no number");
+        assert_eq!(
+            program.environment,
+            [(
+                "LD_PRELOAD".to_string(),
+                "/vendor/lib64/lib a.so".to_string()
+            )],
+            "a quoted value keeps its blanks"
+        );
+        assert!(
+            read("service a /a\n    socket a pipe 0660\n").is_err(),
+            "no such kind of socket"
+        );
+        assert!(
+            read("service a /a\n    socket a stream+nonblock 0660\n").is_err(),
+            "nothing init does to a socket"
+        );
+        assert!(
+            read("service a /a\n    socket a stream rw\n").is_err(),
+            "a mode that is no number"
+        );
     }
 
     #[test]
     fn a_service_of_the_older_kind_is_named_by_its_interface_and_its_instance() {
-        let script = read("service a /a\n    interface android.hardware.gatekeeper@1.0::IGatekeeper default\n").unwrap();
-        assert_eq!(script.programs[0].interfaces, ["android.hardware.gatekeeper@1.0::IGatekeeper/default"]);
+        let script = read(
+            "service a /a\n    interface android.hardware.gatekeeper@1.0::IGatekeeper default\n",
+        )
+        .unwrap();
+        assert_eq!(
+            script.programs[0].interfaces,
+            ["android.hardware.gatekeeper@1.0::IGatekeeper/default"]
+        );
     }
 
     #[test]
@@ -362,13 +498,42 @@ mod tests {
              \x20   chown system system /dev/a\n",
         )
         .unwrap();
-        assert_eq!(script.imports, ["/vendor/etc/init/hw/init.${ro.hardware}.rc"]);
-        let [first, boot] = &script.actions[..] else { panic!("two on sections") };
-        assert_eq!(first.triggers, ["property:ro.special_edition=true", "property:sys.boot_completed=1"]);
-        assert_eq!(first.commands, [strings(&["start", "vendor.weaver"]), strings(&["write", "/sys/a", "1 2"])]);
-        assert_eq!((boot.triggers.clone(), boot.commands.clone()), (strings(&["boot"]), vec![strings(&["chown", "system", "system", "/dev/a"])]));
-        assert!(read("on boot &&\n").is_err(), "a trigger is missing after &&");
-        assert!(read("on\n").is_err(), "an on section that waits for nothing");
+        assert_eq!(
+            script.imports,
+            ["/vendor/etc/init/hw/init.${ro.hardware}.rc"]
+        );
+        let [first, boot] = &script.actions[..] else {
+            panic!("two on sections")
+        };
+        assert_eq!(
+            first.triggers,
+            [
+                "property:ro.special_edition=true",
+                "property:sys.boot_completed=1"
+            ]
+        );
+        assert_eq!(
+            first.commands,
+            [
+                strings(&["start", "vendor.weaver"]),
+                strings(&["write", "/sys/a", "1 2"])
+            ]
+        );
+        assert_eq!(
+            (boot.triggers.clone(), boot.commands.clone()),
+            (
+                strings(&["boot"]),
+                vec![strings(&["chown", "system", "system", "/dev/a"])]
+            )
+        );
+        assert!(
+            read("on boot &&\n").is_err(),
+            "a trigger is missing after &&"
+        );
+        assert!(
+            read("on\n").is_err(),
+            "an on section that waits for nothing"
+        );
     }
 
     #[test]
@@ -389,16 +554,40 @@ mod tests {
         )
         .unwrap();
         let program = &script.programs[0];
-        assert_eq!((program.path.as_str(), program.args.len()), ("/a#b", 0), "inside a word it is a character like any other");
-        assert_eq!(program.user.as_deref(), Some("system"), "a comment does not carry on in the next line");
-        assert_eq!(program.environment, [("FLAG".to_string(), "true".to_string()), ("TEXT".to_string(), "a # b \\n".to_string())], "between quotes nothing is read but the quote that ends them");
+        assert_eq!(
+            (program.path.as_str(), program.args.len()),
+            ("/a#b", 0),
+            "inside a word it is a character like any other"
+        );
+        assert_eq!(
+            program.user.as_deref(),
+            Some("system"),
+            "a comment does not carry on in the next line"
+        );
+        assert_eq!(
+            program.environment,
+            [
+                ("FLAG".to_string(), "true".to_string()),
+                ("TEXT".to_string(), "a # b \\n".to_string())
+            ],
+            "between quotes nothing is read but the quote that ends them"
+        );
     }
 
     #[test]
     fn a_line_outside_any_section_is_refused() {
         assert!(read("user system\n").is_err());
-        assert!(read("service a\n").is_err(), "a service without its program");
-        assert!(read("service a /a\n    user\n").is_err(), "a user line that names none");
-        assert!(read("service a /a\n    setenv \"A\n").is_err(), "a quote left open");
+        assert!(
+            read("service a\n").is_err(),
+            "a service without its program"
+        );
+        assert!(
+            read("service a /a\n    user\n").is_err(),
+            "a user line that names none"
+        );
+        assert!(
+            read("service a /a\n    setenv \"A\n").is_err(),
+            "a quote left open"
+        );
     }
 }

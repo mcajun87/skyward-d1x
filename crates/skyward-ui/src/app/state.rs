@@ -37,9 +37,13 @@ pub struct State {
     pub vibration: f32,
     /// A computer connected over USB is offered internal storage.
     pub file_transfer: bool,
+    /// adbd listens on the network, so a computer can reach it over WiFi.
+    pub wifi_adb: bool,
     pub reboot: usize,
     /// What the wipe page has chosen, by place in [`WIPES`].
     pub wipe: [bool; WIPES.len()],
+    /// What the typed format page has been given.
+    pub wipe_yes: String,
     /// The phone has a cache partition, which the wipe page then offers.
     pub cache_partition: bool,
     /// How many folders of its own the phone keeps logs in on the data
@@ -58,6 +62,13 @@ pub struct State {
     /// A zip's install script runs only if the zip was signed with one of
     /// the phone's update keys.
     pub check_signature: bool,
+    /// ZIPs waiting to be installed one after another, as OrangeFox/TWRP
+    /// keeps a queue; the first is taken out when it starts.
+    pub queue: Vec<QueueEntry>,
+    /// A file is being chosen to add to the queue, not to install now.
+    pub queue_add: bool,
+    /// A queue is running: the next ZIP starts when one ends with success.
+    pub queue_running: bool,
     /// The phone keeps its recovery in a partition of each slot, which the
     /// install page then offers to keep Skyward in.
     pub recovery_partitions: bool,
@@ -70,18 +81,31 @@ pub struct State {
     /// The mount page's partitions, as the runtime last read them, or why
     /// it could not.
     pub mounts: Result<Vec<MountRow>, String>,
+    /// What the pages say of each row of [`Self::mounts`], in the same
+    /// order.
+    pub mount_details: Vec<MountDetails>,
+    /// Which partition the detail page shows.
+    pub mount_chosen: usize,
     pub mount_failure: Option<MountFailure>,
     /// Which of [`BACKUP_PARTS`] a backup takes.
-    pub backup: [bool; 5],
+    pub backup: [bool; 6],
     /// Where a backup goes.
     pub backup_to: Place,
     pub compress: bool,
     pub verify: bool,
+    /// A backup is encrypted with a passphrase, typed before it starts.
+    pub encrypt: bool,
+    /// The passphrase a backup is encrypted with, as the keyboard leaves
+    /// it before the backup starts.
+    pub backup_password: String,
+    /// The passphrase of the encrypted backup being restored, as the
+    /// keyboard leaves it before the restore starts.
+    pub restore_password: String,
     /// The backups found, newest first, those that cannot be read last.
     pub backups: Vec<BackupEntry>,
     /// The backup the restore page shows, as it was found, and which of its
     /// parts to restore.
-    pub restore: Option<(BackupEntry, [bool; 5])>,
+    pub restore: Option<(BackupEntry, [bool; 6])>,
     /// Backing up or restoring under way, or how it last ended.
     pub backup_job: Option<BackupJob>,
     /// Which logs to export: the recovery's, the kernel's.
@@ -211,8 +235,10 @@ impl Default for State {
             vibrate: true,
             vibration: SLIDER_START,
             file_transfer: true,
+            wifi_adb: true,
             reboot: 0,
             wipe: [false; WIPES.len()],
+            wipe_yes: String::new(),
             cache_partition: false,
             phone_logs: 0,
             pattern: Vec::new(),
@@ -222,15 +248,23 @@ impl Default for State {
             package_name: None,
             script_output: Vec::new(),
             check_signature: false,
+            queue: Vec::new(),
+            queue_add: false,
+            queue_running: false,
             recovery_partitions: false,
             keep_recovery: true,
             reflash: None,
             mounts: Ok(Vec::new()),
+            mount_details: Vec::new(),
+            mount_chosen: 0,
             mount_failure: None,
-            backup: [true, true, false, false, true],
+            backup: [true, true, true, true, false, false],
             backup_to: Place::Storage,
             compress: false,
             verify: true,
+            encrypt: false,
+            backup_password: String::new(),
+            restore_password: String::new(),
             backups: Vec::new(),
             restore: None,
             backup_job: None,
@@ -253,7 +287,10 @@ impl Default for State {
             usb_drive: None,
             drive: Folder::new(""),
             file: None,
-            fastboot: Fastboot { running: false, link: UsbLink::Unplugged },
+            fastboot: Fastboot {
+                running: false,
+                link: UsbLink::Unplugged,
+            },
             erase: Erase::default(),
             asked: Asked::default(),
             clip: None,
@@ -351,7 +388,9 @@ impl State {
 
     /// Whether Skyward is being updated.
     pub fn updating_skyward(&self) -> bool {
-        self.skyward_job.as_ref().is_some_and(|j| j.outcome.is_none())
+        self.skyward_job
+            .as_ref()
+            .is_some_and(|j| j.outcome.is_none())
     }
 
     /// Whether the phone has the page `screen`: the WLAN page where the

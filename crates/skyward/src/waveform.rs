@@ -43,7 +43,10 @@ pub(crate) fn share(strength: &Strength, position: f32) -> f32 {
 /// `samples` each made `share` of itself, for a driver that is given the
 /// strength in the samples it plays.
 pub(crate) fn scaled(samples: &[i8], share: f32) -> Vec<i8> {
-    samples.iter().map(|&sample| (f32::from(sample) * share).round() as i8).collect()
+    samples
+        .iter()
+        .map(|&sample| (f32::from(sample) * share).round() as i8)
+        .collect()
 }
 
 /// A click's samples at [`RATE`] for a motor that swings at `hz`: whole
@@ -71,7 +74,11 @@ pub(crate) fn ticks(hz: f32) -> Vec<i8> {
             let (start, peak, end) = (start + offset, peak + offset, end + offset);
             for (i, sample) in samples.iter_mut().enumerate().take(at(end)).skip(at(start)) {
                 let t = i as f32 * 1000.0 / TICKS_RATE as f32 / scale;
-                let (way, power) = if t < peak { ((t - start) / (peak - start), rise) } else { ((end - t) / (end - peak), fall) };
+                let (way, power) = if t < peak {
+                    ((t - start) / (peak - start), rise)
+                } else {
+                    ((end - t) / (end - peak), fall)
+                };
                 let k = (FRAC_PI_2 * way.clamp(0.0, 1.0)).sin().powf(power);
                 *sample = (strength * share * k * f32::from(i8::MAX)).round() as i8;
             }
@@ -93,7 +100,10 @@ mod tests {
         assert_eq!(*samples.iter().max().unwrap(), i8::MAX);
         let quarter = (RATE as f32 / 172.4 / 4.0).round() as usize;
         assert!(samples[quarter] > 120, "it rises first");
-        assert!(samples[drive + quarter] < -120, "it falls first once turned over");
+        assert!(
+            samples[drive + quarter] < -120,
+            "it falls first once turned over"
+        );
     }
 
     #[test]
@@ -102,39 +112,102 @@ mod tests {
         let samples = ticks(TICKS_HZ);
         let (first, second) = (&samples[..at(12.167)], &samples[at(55.125)..]);
         assert_eq!(samples.len(), at(55.125 + 12.167));
-        assert!(samples[at(12.167)..at(55.125)].iter().all(|&s| s == 0), "still between");
-        let halves = |s: &[i8]| 1 + s.iter().filter(|&&s| s != 0).map(|&s| s > 0).collect::<Vec<_>>().windows(2).filter(|w| w[0] != w[1]).count();
-        assert_eq!((halves(first), halves(second)), (6, 6), "six half-swings each");
+        assert!(
+            samples[at(12.167)..at(55.125)].iter().all(|&s| s == 0),
+            "still between"
+        );
+        let halves = |s: &[i8]| {
+            1 + s
+                .iter()
+                .filter(|&&s| s != 0)
+                .map(|&s| s > 0)
+                .collect::<Vec<_>>()
+                .windows(2)
+                .filter(|w| w[0] != w[1])
+                .count()
+        };
+        assert_eq!(
+            (halves(first), halves(second)),
+            (6, 6),
+            "six half-swings each"
+        );
         let motor = TICKS_RATE as f32 / TICKS_HZ / 2.0;
-        assert!((at(12.167 - 0.125) as f32 / 6.0) < motor, "each quicker than the motor's own");
-        assert_eq!(first.iter().min(), Some(&-i8::MAX), "the first swings to the full");
+        assert!(
+            (at(12.167 - 0.125) as f32 / 6.0) < motor,
+            "each quicker than the motor's own"
+        );
+        assert_eq!(
+            first.iter().min(),
+            Some(&-i8::MAX),
+            "the first swings to the full"
+        );
         for (i, (&a, &b)) in first.iter().zip(second).enumerate() {
-            assert!((f32::from(a) * 0.79 - f32::from(b)).abs() <= 1.0, "the second is the first at 0.79: {a} and {b} at {i}");
+            assert!(
+                (f32::from(a) * 0.79 - f32::from(b)).abs() <= 1.0,
+                "the second is the first at 0.79: {a} and {b} at {i}"
+            );
         }
-        assert_eq!(ticks(TICKS_HZ * 2.0).len(), samples.len().div_ceil(2), "a motor twice as quick ticks in half the time");
+        assert_eq!(
+            ticks(TICKS_HZ * 2.0).len(),
+            samples.len().div_ceil(2),
+            "a motor twice as quick ticks in half the time"
+        );
     }
 
     #[test]
     fn the_slider_spans_the_strengths_each_step_the_same_factor() {
-        let s = Strength { lightest: 0.25, strongest: 1.0 };
+        let s = Strength {
+            lightest: 0.25,
+            strongest: 1.0,
+        };
         assert_eq!((share(&s, 0.0), share(&s, 1.0)), (0.25, 1.0));
         assert!((share(&s, 0.5) - 0.5).abs() < 1e-6);
-        assert!((share(&s, 0.25) / share(&s, 0.0) - share(&s, 1.0) / share(&s, 0.75)).abs() < 1e-6, "each step the same factor");
-        assert_eq!((share(&s, -1.0), share(&s, 2.0)), (0.25, 1.0), "no further than its ends");
+        assert!(
+            (share(&s, 0.25) / share(&s, 0.0) - share(&s, 1.0) / share(&s, 0.75)).abs() < 1e-6,
+            "each step the same factor"
+        );
+        assert_eq!(
+            (share(&s, -1.0), share(&s, 2.0)),
+            (0.25, 1.0),
+            "no further than its ends"
+        );
     }
 
     #[test]
     fn samples_made_a_share_of_themselves_swing_the_same_way_less_far() {
         let click = made(172.4);
-        assert_eq!(scaled(&click, 1.0), click, "the whole of them is as they were made");
-        assert!(scaled(&click, 0.0).iter().all(|&s| s == 0), "none of them is still");
-        let s = Strength { lightest: 0.15, strongest: 1.0 };
-        let peaks: Vec<i8> = [0.0, 0.5, 1.0].iter().map(|&position| *scaled(&click, share(&s, position)).iter().max().unwrap()).collect();
+        assert_eq!(
+            scaled(&click, 1.0),
+            click,
+            "the whole of them is as they were made"
+        );
+        assert!(
+            scaled(&click, 0.0).iter().all(|&s| s == 0),
+            "none of them is still"
+        );
+        let s = Strength {
+            lightest: 0.15,
+            strongest: 1.0,
+        };
+        let peaks: Vec<i8> = [0.0, 0.5, 1.0]
+            .iter()
+            .map(|&position| *scaled(&click, share(&s, position)).iter().max().unwrap())
+            .collect();
         assert_eq!(peaks, [19, 49, 127], "the slider's ends and its middle");
         for (&was, &now) in click.iter().zip(&scaled(&click, 0.415)) {
-            assert!(now.unsigned_abs() <= was.unsigned_abs() && (now == 0 || now.signum() == was.signum()), "{was} became {now}");
+            assert!(
+                now.unsigned_abs() <= was.unsigned_abs()
+                    && (now == 0 || now.signum() == was.signum()),
+                "{was} became {now}"
+            );
         }
         let ticking = ticks(TICKS_HZ);
-        assert!(ticking.iter().zip(&scaled(&ticking, 0.415)).all(|(&was, &now)| was != 0 || now == 0), "still between the ticks");
+        assert!(
+            ticking
+                .iter()
+                .zip(&scaled(&ticking, 0.415))
+                .all(|(&was, &now)| was != 0 || now == 0),
+            "still between the ticks"
+        );
     }
 }

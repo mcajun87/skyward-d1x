@@ -113,14 +113,25 @@ impl App {
 
     /// The partition the page of one shows.
     pub(super) fn fs_row(&self) -> Option<&FsRow> {
-        self.state.filesystems.as_ref()?.as_ref().ok()?.get(self.state.fs_chosen)
+        self.state
+            .filesystems
+            .as_ref()?
+            .as_ref()
+            .ok()?
+            .get(self.state.fs_chosen)
     }
 
     /// Work on whole partitions has begun. Work the system asked for, which
     /// `asked` says, has its page as the only one; the filesystem page's
     /// opens over it, to go back to once the work has ended.
     pub fn part_work_started(&mut self, kind: PartKind, asked: bool) {
-        self.state.part_work = Some(PartWork { kind, asked, items: Vec::new(), output: Vec::new(), outcome: None });
+        self.state.part_work = Some(PartWork {
+            kind,
+            asked,
+            items: Vec::new(),
+            output: Vec::new(),
+            outcome: None,
+        });
         match asked {
             true => {
                 self.stack = vec![(Screen::PartWork, 0.0, Focus::Unset)];
@@ -133,14 +144,25 @@ impl App {
 
     /// The partitions the work goes through.
     pub fn part_listed(&mut self, names: Vec<String>) {
-        let work = self.state.part_work.as_mut().expect("only work under way lists its partitions");
-        work.items = names.into_iter().map(|name| (name, ItemState::Waiting)).collect();
+        let work = self
+            .state
+            .part_work
+            .as_mut()
+            .expect("only work under way lists its partitions");
+        work.items = names
+            .into_iter()
+            .map(|name| (name, ItemState::Waiting))
+            .collect();
         self.refresh();
     }
 
     /// The partition at `index` is under way.
     pub fn part_at(&mut self, index: usize) {
-        let work = self.state.part_work.as_mut().expect("only work under way moves on");
+        let work = self
+            .state
+            .part_work
+            .as_mut()
+            .expect("only work under way moves on");
         work.items[index].1 = ItemState::Working;
         self.refresh();
     }
@@ -148,9 +170,18 @@ impl App {
     /// The partition at `index` ended as `end`, the program working on it
     /// having said `said`.
     pub fn part_ended(&mut self, index: usize, end: ItemEnd, said: &str) {
-        let work = self.state.part_work.as_mut().expect("only work under way ends a partition");
+        let work = self
+            .state
+            .part_work
+            .as_mut()
+            .expect("only work under way ends a partition");
         work.items[index].1 = ItemState::Ended(end);
-        let lines: Vec<String> = said.lines().map(str::trim_end).filter(|l| !l.is_empty()).map(str::to_string).collect();
+        let lines: Vec<String> = said
+            .lines()
+            .map(str::trim_end)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
         if !lines.is_empty() {
             work.output = lines[lines.len().saturating_sub(SCRIPT_LINES)..].to_vec();
         }
@@ -162,10 +193,19 @@ impl App {
     /// went through every partition: the phone then leaves on its own. The
     /// data partition, worked on, is closed now.
     pub fn part_work_ended(&mut self, outcome: Result<(), PartStop>, now: u64) {
-        let work = self.state.part_work.as_mut().expect("only work under way ends");
-        let failed = outcome.is_err() || work.items.iter().any(|(_, s)| matches!(s, ItemState::Ended(ItemEnd::Failed(_))));
+        let work = self
+            .state
+            .part_work
+            .as_mut()
+            .expect("only work under way ends");
+        let failed = outcome.is_err()
+            || work
+                .items
+                .iter()
+                .any(|(_, s)| matches!(s, ItemState::Ended(ItemEnd::Failed(_))));
         let lit = failed || !work.asked;
-        let data = work.kind == PartKind::Repair && work.items.iter().any(|(name, _)| name == DATA_PARTITION);
+        let data = work.kind == PartKind::Repair
+            && work.items.iter().any(|(name, _)| name == DATA_PARTITION);
         work.outcome = Some(outcome);
         if data && self.state.data != Data::Erased {
             self.state.data = Data::Closed;
@@ -193,21 +233,35 @@ mod tests {
             size: 64 << 20,
             others: others.iter().map(|o| o.to_string()).collect(),
         };
-        vec![row("data", None, &[]), row("metadata", Some("f2fs"), &[]), row("cache", Some("ext4"), &["f2fs"])]
+        vec![
+            row("data", None, &[]),
+            row("metadata", Some("f2fs"), &[]),
+            row("cache", Some("ext4"), &["f2fs"]),
+        ]
     }
 
     #[test]
     fn the_filesystem_page_does_to_a_partition_what_is_chosen_and_reads_them_again_after() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Advanced, W, H, PPD);
-        assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::Filesystems)), vec![Effect::ReadFilesystems]);
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::Open(Screen::Filesystems)),
+            vec![Effect::ReadFilesystems]
+        );
         app.set_filesystems(Ok(fs_rows()));
         tap(&mut app, &f, &i, Action::OpenFilesystem(2));
         assert_eq!(app.screen(), Screen::Filesystem);
-        assert_eq!(app.state.fs_action, FsAction::Repair, "a repair, which changes nothing the partition holds, to begin with");
+        assert_eq!(
+            app.state.fs_action,
+            FsAction::Repair,
+            "a repair, which changes nothing the partition holds, to begin with"
+        );
         tap(&mut app, &f, &i, Action::ChooseFs(FsChoice::Remake(0)));
         assert_eq!(app.state.fs_action, FsAction::Remake("f2fs".into()));
-        let remake = Effect::Filesystem { name: "cache".into(), action: FsAction::Remake("f2fs".into()) };
+        let remake = Effect::Filesystem {
+            name: "cache".into(),
+            action: FsAction::Remake("f2fs".into()),
+        };
         assert_eq!(swipe(&mut app, &f, &i, Confirm::Filesystem), vec![remake]);
         app.part_work_started(PartKind::Remake("f2fs".into()), false);
         assert_eq!(app.screen(), Screen::PartWork);
@@ -215,14 +269,25 @@ mod tests {
         app.part_at(0);
         assert!(!app.frame(&f, &i).back, "no going back while it works");
         app.key(Key::Back, 0);
-        assert_eq!((app.screen(), toast(&app)), (Screen::PartWork, Some("请等待完成后再返回")));
+        assert_eq!(
+            (app.screen(), toast(&app)),
+            (Screen::PartWork, Some("请等待完成后再返回"))
+        );
         app.part_ended(0, ItemEnd::Made, "");
         app.part_work_ended(Ok(()), 0);
         assert!(app.frame(&f, &i).back);
-        assert_eq!(tap_at(&mut app, &f, &i, Action::Back, 2000), vec![Effect::ReadFilesystems], "the partition may hold another now");
+        assert_eq!(
+            tap_at(&mut app, &f, &i, Action::Back, 2000),
+            vec![Effect::ReadFilesystems],
+            "the partition may hold another now"
+        );
         assert_eq!(app.screen(), Screen::Filesystem);
         assert_eq!(app.state.part_work, None);
-        assert_eq!(app.state.fs_action, FsAction::Repair, "what to do to it is chosen afresh");
+        assert_eq!(
+            app.state.fs_action,
+            FsAction::Repair,
+            "what to do to it is chosen afresh"
+        );
     }
 
     #[test]
@@ -238,33 +303,67 @@ mod tests {
         assert_eq!(toast(&app), Some("正在打开 data 分区，请稍后再试"));
         app.state.data = Data::Open;
         app.refresh();
-        let repair = Effect::Filesystem { name: "data".into(), action: FsAction::Repair };
+        let repair = Effect::Filesystem {
+            name: "data".into(),
+            action: FsAction::Repair,
+        };
         assert_eq!(swipe(&mut app, &f, &i, Confirm::Filesystem), vec![repair]);
         app.part_work_started(PartKind::Repair, false);
         app.part_listed(vec!["data".into()]);
         app.part_at(0);
-        app.part_ended(0, ItemEnd::Fixed, "[FSCK] valid_block_count matching with CP   [Fail]\n\nDone: 3.2 secs\n");
+        app.part_ended(
+            0,
+            ItemEnd::Fixed,
+            "[FSCK] valid_block_count matching with CP   [Fail]\n\nDone: 3.2 secs\n",
+        );
         app.part_work_ended(Ok(()), 0);
-        let work = app.state.part_work.clone().expect("the page shows how it ended");
-        assert_eq!(work.items, [("data".to_string(), ItemState::Ended(ItemEnd::Fixed))]);
-        assert_eq!(work.output, ["[FSCK] valid_block_count matching with CP   [Fail]", "Done: 3.2 secs"], "blank lines left out");
-        assert_eq!(app.state.data, Data::Closed, "worked on, the partition is closed");
+        let work = app
+            .state
+            .part_work
+            .clone()
+            .expect("the page shows how it ended");
+        assert_eq!(
+            work.items,
+            [("data".to_string(), ItemState::Ended(ItemEnd::Fixed))]
+        );
+        assert_eq!(
+            work.output,
+            [
+                "[FSCK] valid_block_count matching with CP   [Fail]",
+                "Done: 3.2 secs"
+            ],
+            "blank lines left out"
+        );
+        assert_eq!(
+            app.state.data,
+            Data::Closed,
+            "worked on, the partition is closed"
+        );
     }
 
     #[test]
-    fn partition_work_the_system_asked_for_is_the_only_page_and_offers_somewhere_to_go_only_when_it_fell_short() {
+    fn partition_work_the_system_asked_for_is_the_only_page_and_offers_somewhere_to_go_only_when_it_fell_short()
+     {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.part_work_started(PartKind::Disable, true);
         assert_eq!(app.stack.len(), 1);
         assert_eq!(app.screen(), Screen::PartWork);
-        app.part_listed(vec!["/dev/block/by-name/userdata".into(), "/dev/block/by-name/metadata".into()]);
+        app.part_listed(vec![
+            "/dev/block/by-name/userdata".into(),
+            "/dev/block/by-name/metadata".into(),
+        ]);
         app.part_at(0);
         app.part_ended(0, ItemEnd::Erased, "");
         app.part_at(1);
         app.part_ended(1, ItemEnd::Erased, "");
         app.part_work_ended(Ok(()), 0);
-        let reboot = |app: &mut App| app.frame(&f, &i).hits.iter().any(|h| h.action == Action::RebootTo(Target::System));
+        let reboot = |app: &mut App| {
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| h.action == Action::RebootTo(Target::System))
+        };
         assert!(!reboot(&mut app), "done, the phone leaves on its own");
         app.part_work_started(PartKind::Disable, true);
         app.part_work_ended(Err(PartStop::Refused(Refusal::Unverified)), 0);

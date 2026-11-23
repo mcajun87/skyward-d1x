@@ -10,14 +10,34 @@ pub mod weaver;
 
 #[cfg(target_os = "android")]
 pub mod data;
+pub mod keymaster4;
 #[cfg(target_os = "android")]
 pub mod keymint;
 #[cfg(target_os = "android")]
 pub mod keystore2;
 
 #[cfg(target_os = "android")]
+impl keystore::Decryptor for keymint::KeyService<'_> {
+    fn gcm_decrypt(
+        &self,
+        key_blob: &[u8],
+        app_id: &[u8],
+        nonce: &[u8],
+        body: &[u8],
+    ) -> anyhow::Result<Vec<u8>> {
+        keymint::KeyService::gcm_decrypt(self, key_blob, app_id, nonce, body, None)
+    }
+}
+
+#[cfg(target_os = "android")]
 impl keystore::Decryptor for keymint::KeyMint<'_> {
-    fn gcm_decrypt(&self, key_blob: &[u8], app_id: &[u8], nonce: &[u8], body: &[u8]) -> anyhow::Result<Vec<u8>> {
+    fn gcm_decrypt(
+        &self,
+        key_blob: &[u8],
+        app_id: &[u8],
+        nonce: &[u8],
+        body: &[u8],
+    ) -> anyhow::Result<Vec<u8>> {
         // The keys unwrapped this way belong to the phone rather than to
         // any user, so none of them is guarded by a screen lock.
         keymint::KeyMint::gcm_decrypt(self, key_blob, app_id, nonce, body, None)

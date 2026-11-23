@@ -3,7 +3,7 @@
 //! beside it while file transfer is on.
 
 use crate::{prop, set_prop, wait_prop};
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -33,7 +33,11 @@ pub fn set(config: &str, timeout: Duration) -> Result<()> {
     if config == "none" {
         let start = Instant::now();
         while !matches!(prop("init.svc.adbd").as_deref(), None | Some("stopped")) {
-            ensure!(start.elapsed() < timeout, "adbd still runs {} ms after the port went to none", timeout.as_millis());
+            ensure!(
+                start.elapsed() < timeout,
+                "adbd still runs {} ms after the port went to none",
+                timeout.as_millis()
+            );
             thread::sleep(Duration::from_millis(10));
         }
     }

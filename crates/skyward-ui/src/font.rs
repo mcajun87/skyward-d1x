@@ -1,5 +1,5 @@
 use ab_glyph::{Font, FontRef, GlyphId, PxScale, ScaleFont, VariableFont};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -36,6 +36,27 @@ pub(crate) const SUBPIXELS: f32 = 4.0;
 /// anew.
 const GLYPHS_KEPT: usize = 16_384;
 
+thread_local! {
+    /// The face that draws the characters the UI's own typeface has none
+    /// for: SSIDs and file names come off the phone and are not known when
+    /// the UI typeface is cut down.
+    static CJK: RefCell<Option<Rc<Face>>> = const { RefCell::new(None) };
+}
+
+/// The face that fills in characters the UI typeface lacks, where one has
+/// been loaded.
+pub(crate) fn fallback() -> Option<Rc<Face>> {
+    CJK.with(|held| held.borrow().clone())
+}
+
+fn set_fallback(face: Face) {
+    CJK.with(|held| *held.borrow_mut() = Some(Rc::new(face)));
+}
+
+fn clear_fallback() {
+    CJK.with(|held| *held.borrow_mut() = None);
+}
+
 #[derive(Default)]
 struct Known {
     /// Each character's glyph and advance, unscaled.
@@ -49,12 +70,19 @@ struct Known {
 
 impl Face {
     fn new(data: &'static [u8], index: u32, weight: f32) -> Result<Self> {
-        let mut font =
-            FontRef::try_from_slice_and_index(data, index).map_err(|e| anyhow!("parse font: {e}"))?;
+        let mut font = FontRef::try_from_slice_and_index(data, index)
+            .map_err(|e| anyhow!("parse font: {e}"))?;
         font.set_variation(b"wght", weight);
-        let upem = font.units_per_em().ok_or_else(|| anyhow!("font has no units-per-em"))?;
+        let upem = font
+            .units_per_em()
+            .ok_or_else(|| anyhow!("font has no units-per-em"))?;
         let height = font.height_unscaled();
-        Ok(Face { font, upem, height, known: RefCell::new(Known::default()) })
+        Ok(Face {
+            font,
+            upem,
+            height,
+            known: RefCell::new(Known::default()),
+        })
     }
 
     /// The glyph for `ch`, and how far it advances the pen at `scale`.
@@ -74,13 +102,24 @@ impl Face {
             return ink.clone();
         }
         let at = ab_glyph::point(qx as f32 / SUBPIXELS, qy as f32 / SUBPIXELS);
-        let ink = self.font.outline_glyph(id.with_scale_and_position(scale, at)).map(|og| {
-            let b = og.px_bounds();
-            let (w, h) = (b.width() as u32, b.height() as u32);
-            let mut cov = vec![0u8; (w * h) as usize];
-            og.draw(|gx, gy, c| cov[(gy * w + gx) as usize] = (c.clamp(0.0, 1.0) * 255.0).round() as u8);
-            Rc::new(Ink { x: b.min.x as i32, y: b.min.y as i32, w, h, cov })
-        });
+        let ink = self
+            .font
+            .outline_glyph(id.with_scale_and_position(scale, at))
+            .map(|og| {
+                let b = og.px_bounds();
+                let (w, h) = (b.width() as u32, b.height() as u32);
+                let mut cov = vec![0u8; (w * h) as usize];
+                og.draw(|gx, gy, c| {
+                    cov[(gy * w + gx) as usize] = (c.clamp(0.0, 1.0) * 255.0).round() as u8
+                });
+                Rc::new(Ink {
+                    x: b.min.x as i32,
+                    y: b.min.y as i32,
+                    w,
+                    h,
+                    cov,
+                })
+            });
         let mut known = self.known.borrow_mut();
         if known.glyphs.len() >= GLYPHS_KEPT {
             known.glyphs.clear();
@@ -95,9 +134,14 @@ impl Face {
         PxScale::from(em_px * self.height / self.upem)
     }
 
-    /// Whether the typeface draws `ch` itself.
-    pub fn has(&self, ch: char) -> bool {
+    /// Whether this typeface itself draws `ch`, ignoring the fallback.
+    pub(crate) fn has_direct(&self, ch: char) -> bool {
         self.font.glyph_id(ch).0 != 0
+    }
+
+    /// Whether the typeface draws `ch`, itself or through the fallback.
+    pub fn has(&self, ch: char) -> bool {
+        self.has_direct(ch) || fallback().is_some_and(|face| face.has_direct(ch))
     }
 
     /// Vertical ink extent of the reference ideograph 「中」 relative to the
@@ -107,9 +151,20 @@ impl Face {
         if let Some(&ink) = self.known.borrow().inks.get(&em_px.to_bits()) {
             return ink;
         }
-        let ink = self.bounds('中', em_px);
-        self.known.borrow_mut().inks.insert(em_px.to_bits(), ink);
-        ink
+        // A face cut down to Latin has no 「中」 of its own; the fallback
+        // has the ideograph the rows are measured by.
+        let measured = if self.has_direct('中') {
+            self.bounds('中', em_px)
+        } else if let Some(face) = fallback() {
+            face.bounds('中', em_px)
+        } else {
+            self.bounds('中', em_px)
+        };
+        self.known
+            .borrow_mut()
+            .inks
+            .insert(em_px.to_bits(), measured);
+        measured
     }
 
     /// The line text is set on, above and below the baseline (negative is
@@ -117,7 +172,10 @@ impl Face {
     /// spans.
     pub fn line(&self, em_px: f32) -> (f32, f32) {
         let k = em_px / self.upem;
-        (-self.font.ascent_unscaled() * k, -self.font.descent_unscaled() * k)
+        (
+            -self.font.ascent_unscaled() * k,
+            -self.font.descent_unscaled() * k,
+        )
     }
 
     /// Height of a capital letter above the baseline, for Latin lettering
@@ -131,27 +189,44 @@ impl Face {
     /// rightmost, from their outlines, unrounded. The pen moves as a run of
     /// text is drawn, kerning and all.
     pub fn ink_span(&self, text: &str, em_px: f32) -> (f32, f32) {
-        let scale = self.scale(em_px);
-        let scaled = self.font.as_scaled(scale);
-        let k = em_px / self.upem;
+        let fallback = fallback();
         let (mut pen, mut prev, mut span) = (0.0, None, (f32::MAX, f32::MIN));
         for ch in text.chars() {
-            let (id, advance) = self.glyph(ch, scale);
-            if let Some(p) = prev {
-                pen += scaled.kern(p, id);
+            let source = if self.has_direct(ch) || fallback.is_none() {
+                self
+            } else {
+                fallback.as_deref().unwrap_or(self)
+            };
+            let scale = source.scale(em_px);
+            let scaled = source.font.as_scaled(scale);
+            let k = em_px / source.upem;
+            let (id, advance) = source.glyph(ch, scale);
+            if let Some((p, previous)) = prev {
+                if std::ptr::eq(previous, source) {
+                    pen += scaled.kern(p, id);
+                }
             }
-            if let Some(o) = self.font.outline(id) {
-                span = (span.0.min(pen + o.bounds.min.x * k), span.1.max(pen + o.bounds.max.x * k));
+            if let Some(o) = source.font.outline(id) {
+                span = (
+                    span.0.min(pen + o.bounds.min.x * k),
+                    span.1.max(pen + o.bounds.max.x * k),
+                );
             }
             pen += advance;
-            prev = Some(id);
+            prev = Some((id, source));
         }
         span
     }
 
     fn bounds(&self, ch: char, em_px: f32) -> (f32, f32) {
-        let glyph = self.font.glyph_id(ch).with_scale_and_position(self.scale(em_px), ab_glyph::point(0.0, 0.0));
-        let og = self.font.outline_glyph(glyph).unwrap_or_else(|| panic!("font has no outline for {ch:?}"));
+        let glyph = self
+            .font
+            .glyph_id(ch)
+            .with_scale_and_position(self.scale(em_px), ab_glyph::point(0.0, 0.0));
+        let og = self
+            .font
+            .outline_glyph(glyph)
+            .unwrap_or_else(|| panic!("font has no outline for {ch:?}"));
         let b = og.px_bounds();
         (b.min.y, b.max.y)
     }
@@ -229,7 +304,10 @@ impl FontInfo {
     fn read(data: &[u8], index: u32) -> Result<FontInfo> {
         let face = ttf_parser::Face::parse(data, index).map_err(|e| anyhow!("parse font: {e}"))?;
         let name = |id: u16| -> Option<String> {
-            face.names().into_iter().filter(|n| n.name_id == id && n.is_unicode()).find_map(|n| n.to_string())
+            face.names()
+                .into_iter()
+                .filter(|n| n.name_id == id && n.is_unicode())
+                .find_map(|n| n.to_string())
         };
         let needed = |id: u16| name(id).ok_or_else(|| anyhow!("the font names no entry {id}"));
         let version = needed(ttf_parser::name_id::VERSION)?;
@@ -255,10 +333,35 @@ impl Fonts {
         Self::load_with(path, index, mono, &STOCK_WEIGHTS)
     }
 
-    pub fn load_with(path: impl AsRef<Path>, index: u32, mono: impl AsRef<Path>, w: &Weights) -> Result<Self> {
+    pub fn load_with(
+        path: impl AsRef<Path>,
+        index: u32,
+        mono: impl AsRef<Path>,
+        w: &Weights,
+    ) -> Result<Self> {
         // One copy of the bytes backs every weight instance.
         let data = leak(path.as_ref())?;
         let mono_data = leak(mono.as_ref())?;
+        // The UI face is cut down to the pages' own text; names that come off
+        // the phone, an SSID above all, may hold any GB2312 character. The
+        // fallback beside it fills in what the UI face has none for.
+        let fallback_path = path.as_ref().with_file_name("MiSansCJK.ttf");
+        match std::fs::read(&fallback_path) {
+            Ok(bytes) => {
+                let bytes: &'static [u8] = Box::leak(bytes.into_boxed_slice());
+                match Face::new(bytes, 0, 400.0) {
+                    Ok(face) => set_fallback(face),
+                    Err(e) => {
+                        clear_fallback();
+                        eprintln!(
+                            "the CJK fallback {} is not readable: {e:#}",
+                            fallback_path.display()
+                        );
+                    }
+                }
+            }
+            Err(_) => clear_fallback(),
+        }
         let face = |wght: f32| Face::new(data, index, wght);
         Ok(Fonts {
             title: face(w.title)?,
@@ -291,7 +394,14 @@ impl Fonts {
             .font
             .variations()
             .into_iter()
-            .map(|a| (String::from_utf8_lossy(&a.tag).into_owned(), a.min_value, a.default_value, a.max_value))
+            .map(|a| {
+                (
+                    String::from_utf8_lossy(&a.tag).into_owned(),
+                    a.min_value,
+                    a.default_value,
+                    a.max_value,
+                )
+            })
             .collect()
     }
 }
@@ -300,7 +410,12 @@ impl Fonts {
 #[cfg(test)]
 pub(crate) fn bundled() -> Fonts {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../resources/fonts");
-    Fonts::load(format!("{dir}/MiSansVF.ttf"), 0, format!("{dir}/KirkMono-Regular.ttf")).unwrap()
+    Fonts::load(
+        format!("{dir}/MiSansVF.ttf"),
+        0,
+        format!("{dir}/KirkMono-Regular.ttf"),
+    )
+    .unwrap()
 }
 
 #[cfg(test)]
@@ -315,7 +430,10 @@ mod tests {
         let em = 16.9 * 3.0;
         let (ink_top, ink_bottom) = f.heading.ink(em);
         let (top, bottom) = f.heading.line(em);
-        assert!((ink_bottom - ink_top - 47.0).abs() <= 2.0, "ink {ink_top}..{ink_bottom}");
+        assert!(
+            (ink_bottom - ink_top - 47.0).abs() <= 2.0,
+            "ink {ink_top}..{ink_bottom}"
+        );
         assert!((bottom - top - 69.0).abs() <= 2.0, "line {top}..{bottom}");
     }
 }

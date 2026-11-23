@@ -3,19 +3,20 @@
 use super::*;
 
 /// What a backup can take, in the order the backup page lists it.
-pub const BACKUP_PARTS: [Text; 5] = [
+pub const BACKUP_PARTS: [Text; 6] = [
     texts::backup::part::BOOT,
     texts::backup::part::SYSTEM,
+    texts::backup::part::MODEM,
+    texts::backup::part::METADATA,
     texts::backup::part::DATA,
     texts::backup::part::MEDIA,
-    texts::backup::part::MODEM,
 ];
 
 /// Where the data partition's files and the users' own in internal storage
 /// are among [`BACKUP_PARTS`]: both are read and written only with every
 /// user's files open.
-pub const DATA_PART: usize = 2;
-pub const MEDIA_PART: usize = 3;
+pub const DATA_PART: usize = 4;
+pub const MEDIA_PART: usize = 5;
 
 /// A backup found in a place's Skyward/backups folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,12 +37,15 @@ pub struct Held {
     /// The bytes its files take.
     pub size: u64,
     /// Which of [`BACKUP_PARTS`] it holds.
-    pub parts: [bool; 5],
+    pub parts: [bool; 6],
     /// The phone it was made on, by its codename, the system it ran, as
     /// its version reads, and the slot it was made from.
     pub device: String,
     pub system: Option<String>,
     pub slot: Option<Slot>,
+    /// Its files are kept encrypted, and a passphrase is needed to read
+    /// them.
+    pub encrypted: bool,
 }
 
 /// Backing up or restoring, as its page shows it.
@@ -81,7 +85,9 @@ pub enum BackupEnd {
     Saved(String),
     /// A backup restored, but for what it held in the folders of users gone
     /// since, which only the system makes: where those were.
-    Restored { unmade: Vec<String> },
+    Restored {
+        unmade: Vec<String>,
+    },
     /// Stopped as asked: a backup stopped leaves nothing of itself, and a
     /// restore stops only while nothing is written.
     Stopped,
@@ -115,7 +121,13 @@ impl App {
     /// first, by when each was made, and those that cannot be read after
     /// them, by their folder's name, which is when each was begun.
     pub fn set_backups(&mut self, mut backups: Vec<BackupEntry>) {
-        let key = |e: &BackupEntry| (e.held.is_ok(), e.held.as_ref().map_or(0, |h| h.made), e.name.clone());
+        let key = |e: &BackupEntry| {
+            (
+                e.held.is_ok(),
+                e.held.as_ref().map_or(0, |h| h.made),
+                e.name.clone(),
+            )
+        };
         backups.sort_by_key(|e| std::cmp::Reverse(key(e)));
         self.state.backups = backups;
         self.refresh();
@@ -123,19 +135,34 @@ impl App {
 
     /// Look for backups in the places that can be read now.
     pub(super) fn find_backups(&self) -> Effect {
-        Effect::FindBackups { storage: self.state.place_open(Place::Storage), usb: self.state.place_open(Place::UsbDrive) }
+        Effect::FindBackups {
+            storage: self.state.place_open(Place::Storage),
+            usb: self.state.place_open(Place::UsbDrive),
+        }
     }
 
     /// Backing up, or restoring, has begun: its page shows how far it comes.
     /// `checks` when each part is read back to check it.
     pub fn backup_started(&mut self, restore: bool, place: Place, checks: bool) {
-        self.state.backup_job = Some(BackupJob { restore, place, checks, plan: Vec::new(), at: None, outcome: None, stopping: false });
+        self.state.backup_job = Some(BackupJob {
+            restore,
+            place,
+            checks,
+            plan: Vec::new(),
+            at: None,
+            outcome: None,
+            stopping: false,
+        });
         self.open(Screen::BackupJob);
     }
 
     /// The parts the work goes through, once they are measured.
     pub fn backup_plan(&mut self, plan: Vec<(String, u64)>) {
-        self.state.backup_job.as_mut().expect("only work under way is measured").plan = plan;
+        self.state
+            .backup_job
+            .as_mut()
+            .expect("only work under way is measured")
+            .plan = plan;
         if self.screen() == Screen::BackupJob {
             self.refresh();
         }
@@ -143,7 +170,11 @@ impl App {
 
     /// How far the work has come.
     pub fn backup_at(&mut self, at: BackupAt) {
-        self.state.backup_job.as_mut().expect("only work under way moves on").at = Some(at);
+        self.state
+            .backup_job
+            .as_mut()
+            .expect("only work under way moves on")
+            .at = Some(at);
         if self.screen() == Screen::BackupJob {
             self.refresh();
         }
@@ -152,11 +183,47 @@ impl App {
     /// Backing up or restoring has ended: its page says how, lit for the
     /// user to read.
     pub fn backup_ended(&mut self, end: BackupEnd, now: u64) {
-        let job = self.state.backup_job.as_mut().expect("only work under way ends");
+        let job = self
+            .state
+            .backup_job
+            .as_mut()
+            .expect("only work under way ends");
         job.stopping = false;
         job.outcome = Some(end);
         self.wake(now);
         self.refresh();
+    }
+
+    /// How renaming the backup the restore page shows went: renamed, its
+    /// page and the list say the new name; not, why.
+    pub fn backup_renamed(
+        &mut self,
+        place: Place,
+        from: &str,
+        to: &str,
+        outcome: Result<(), String>,
+        now: u64,
+    ) -> Vec<Effect> {
+        match outcome {
+            Ok(()) => {
+                let mut backups = std::mem::take(&mut self.state.backups);
+                for entry in &mut backups {
+                    if entry.place == place && entry.name == from {
+                        entry.name = to.into();
+                    }
+                }
+                if let Some((entry, _)) = self.state.restore.as_mut()
+                    && entry.place == place
+                    && entry.name == from
+                {
+                    entry.name = to.into();
+                }
+                self.set_backups(backups);
+                self.say(self.state.lang.pick(texts::toast::RENAMED), now);
+            }
+            Err(why) => self.report(&texts::restore::rename_failed(self.state.lang, why), now),
+        }
+        Vec::new()
     }
 
     /// How deleting the backup the restore page shows went: deleted, the
@@ -192,37 +259,64 @@ mod tests {
     fn a_backup_takes_what_is_ticked_to_where_it_is_sent() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Backup, &f, &i);
-        assert_eq!(app.state.backup, [true, true, false, false, true]);
-        assert!(swipe(&mut app, &f, &i, Confirm::Backup).is_empty(), "internal storage waits for the data partition");
+        assert_eq!(app.state.backup, [true, true, true, true, false, false]);
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Backup).is_empty(),
+            "the place waits for the data partition"
+        );
         assert_eq!(app.deadline(0), Some(TOAST_MS), "and says so");
         // The owner's files open first; another user's still wait.
         app.data_waiting(Some((10, Keys::Digits)));
-        let first = Effect::Backup { parts: [true, true, false, false, true], place: Place::Storage, compress: false, verify: true };
+        let first = Effect::Backup {
+            parts: [true, true, true, true, false, false],
+            place: Place::Storage,
+            compress: false,
+            verify: true,
+            password: None,
+        };
         assert_eq!(swipe(&mut app, &f, &i, Confirm::Backup), vec![first]);
         tap(&mut app, &f, &i, Action::BackupPart(MEDIA_PART));
-        assert!(swipe(&mut app, &f, &i, Confirm::Backup).is_empty(), "the users' own files are backed up only with every user's files open");
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Backup).is_empty(),
+            "the users' own files are backed up only with every user's files open"
+        );
         tap(&mut app, &f, &i, Action::BackupPart(MEDIA_PART));
         tap(&mut app, &f, &i, Action::BackupPart(DATA_PART));
-        assert!(swipe(&mut app, &f, &i, Confirm::Backup).is_empty(), "and so is the data partition");
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Backup).is_empty(),
+            "and so is the data partition"
+        );
         app.data_waiting(None);
         tap(&mut app, &f, &i, Action::BackupPart(0));
-        assert_eq!(app.state.backup, [false, true, true, false, true]);
+        assert_eq!(app.state.backup, [false, true, true, true, true, false]);
         tap(&mut app, &f, &i, Action::BackupTo(Place::UsbDrive));
         tap(&mut app, &f, &i, Action::Toggle(Switch::Compress));
         tap(&mut app, &f, &i, Action::Toggle(Switch::Verify));
-        assert!(swipe(&mut app, &f, &i, Confirm::Backup).is_empty(), "no drive is plugged in");
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Backup).is_empty(),
+            "no drive is plugged in"
+        );
         app.set_usb_drive(Some(UsbDrive::Shown));
         tap(&mut app, &f, &i, Action::BackupPart(MEDIA_PART));
-        let second = Effect::Backup { parts: [false, true, true, true, true], place: Place::UsbDrive, compress: true, verify: false };
+        let second = Effect::Backup {
+            parts: [false, true, true, true, true, true],
+            place: Place::UsbDrive,
+            compress: true,
+            verify: false,
+            password: None,
+        };
         assert_eq!(swipe(&mut app, &f, &i, Confirm::Backup), vec![second]);
-        for k in 1..5 {
+        for k in 1..BACKUP_PARTS.len() {
             tap(&mut app, &f, &i, Action::BackupPart(k));
         }
-        assert!(swipe(&mut app, &f, &i, Confirm::Backup).is_empty(), "nothing ticked, nothing backed up");
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Backup).is_empty(),
+            "nothing ticked, nothing backed up"
+        );
     }
 
     /// A backup found in `place`, made at `made`, holding `parts`.
-    fn found(place: Place, made: i64, parts: [bool; 5]) -> BackupEntry {
+    fn found(place: Place, made: i64, parts: [bool; 6]) -> BackupEntry {
         let held = Held {
             made,
             size: 6_200_000_000,
@@ -230,65 +324,154 @@ mod tests {
             device: "ishtar".into(),
             system: Some("OS3.0.305.0.WMACNXM".into()),
             slot: Some(Slot::B),
+            encrypted: false,
         };
-        BackupEntry { place, name: fmt::stamp(made, State::default().zone()), held: Ok(held) }
+        BackupEntry {
+            place,
+            name: fmt::stamp(made, State::default().zone()),
+            held: Ok(held),
+        }
     }
 
     #[test]
     fn backups_found_are_listed_newest_first_and_those_unread_last() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
-        assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::Restore)), vec![Effect::FindBackups { storage: false, usb: false }]);
-        let unread = BackupEntry { place: Place::Storage, name: "20261021-150000".into(), held: Err("read backup.toml: not found".into()) };
-        let (old, new) = (found(Place::UsbDrive, 1_792_000_000, [true; 5]), found(Place::Storage, 1_792_348_260, [true; 5]));
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::Open(Screen::Restore)),
+            vec![Effect::FindBackups {
+                storage: false,
+                usb: false
+            }]
+        );
+        let unread = BackupEntry {
+            place: Place::Storage,
+            name: "20261021-150000".into(),
+            held: Err("read backup.toml: not found".into()),
+        };
+        let (old, new) = (
+            found(Place::UsbDrive, 1_792_000_000, [true; 6]),
+            found(Place::Storage, 1_792_348_260, [true; 6]),
+        );
         app.set_backups(vec![unread.clone(), old.clone(), new.clone()]);
         assert_eq!(app.state.backups, [new, old, unread]);
-        let opens = app.frame(&f, &i).hits.iter().filter(|h| matches!(h.action, Action::OpenBackup(_))).count();
-        assert_eq!(opens, 3, "each opens, one that cannot be read to be deleted");
+        let opens = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .filter(|h| matches!(h.action, Action::OpenBackup(_)))
+            .count();
+        assert_eq!(
+            opens, 3,
+            "each opens, one that cannot be read to be deleted"
+        );
     }
 
     #[test]
     fn a_backup_found_opens_to_choose_what_to_restore() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Restore, &f, &i);
-        assert!(app.frame(&f, &i).hits.is_empty(), "nothing found, nothing to open");
-        app.set_backups(vec![found(Place::Storage, 1_792_348_260, [true, true, false, false, true])]);
+        assert!(
+            app.frame(&f, &i).hits.is_empty(),
+            "nothing found, nothing to open"
+        );
+        app.set_backups(vec![found(
+            Place::Storage,
+            1_792_348_260,
+            [true, true, true, false, false, false],
+        )]);
         tap(&mut app, &f, &i, Action::OpenBackup(0));
         assert_eq!(app.screen(), Screen::RestoreBackup);
-        let parts: Vec<Action> =
-            app.frame(&f, &i).hits.iter().map(|h| h.action).filter(|a| matches!(a, Action::RestorePart(_))).collect();
-        assert_eq!(parts, [Action::RestorePart(0), Action::RestorePart(1), Action::RestorePart(4)], "only what the backup holds");
+        let parts: Vec<Action> = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .map(|h| h.action)
+            .filter(|a| matches!(a, Action::RestorePart(_)))
+            .collect();
+        assert_eq!(
+            parts,
+            [
+                Action::RestorePart(0),
+                Action::RestorePart(1),
+                Action::RestorePart(2)
+            ],
+            "only what the backup holds"
+        );
         tap(&mut app, &f, &i, Action::RestorePart(1));
-        assert_eq!(app.state.restore.as_ref().map(|r| r.1), Some([true, false, false, false, true]));
+        assert_eq!(
+            app.state.restore.as_ref().map(|r| r.1),
+            Some([true, false, true, false, false, false])
+        );
         let name = fmt::stamp(1_792_348_260, State::default().zone());
-        assert_eq!(swipe(&mut app, &f, &i, Confirm::Restore), vec![Effect::Restore {
-            place: Place::Storage,
-            name: name.clone(),
-            parts: [true, false, false, false, true]
-        }]);
-        for k in [0, 4] {
+        assert_eq!(
+            swipe(&mut app, &f, &i, Confirm::Restore),
+            vec![Effect::Restore {
+                place: Place::Storage,
+                name: name.clone(),
+                parts: [true, false, true, false, false, false],
+                password: None
+            }]
+        );
+        for k in [0, 2] {
             tap(&mut app, &f, &i, Action::RestorePart(k));
         }
-        assert!(swipe(&mut app, &f, &i, Confirm::Restore).is_empty(), "nothing ticked, nothing restored");
-        assert_eq!(app.key(Key::Back, 0), vec![Effect::FindBackups { storage: false, usb: false }], "back on the list, it is looked for again");
-        assert_eq!((app.screen(), app.state.restore.clone()), (Screen::Restore, None));
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Restore).is_empty(),
+            "nothing ticked, nothing restored"
+        );
+        assert_eq!(
+            app.key(Key::Back, 0),
+            vec![Effect::FindBackups {
+                storage: false,
+                usb: false
+            }],
+            "back on the list, it is looked for again"
+        );
+        assert_eq!(
+            (app.screen(), app.state.restore.clone()),
+            (Screen::Restore, None)
+        );
     }
 
     #[test]
     fn a_data_backup_is_restored_only_with_every_users_files_open() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Restore, &f, &i);
-        app.set_backups(vec![found(Place::Storage, 1_792_348_260, [false, false, true, true, false])]);
+        app.set_backups(vec![found(
+            Place::Storage,
+            1_792_348_260,
+            [false, false, false, false, true, true],
+        )]);
         tap(&mut app, &f, &i, Action::OpenBackup(0));
         assert!(swipe(&mut app, &f, &i, Confirm::Restore).is_empty());
-        assert_eq!(app.deadline(0), Some(TOAST_MS), "the page says to decrypt first");
+        assert_eq!(
+            app.deadline(0),
+            Some(TOAST_MS),
+            "the page says to decrypt first"
+        );
         tap(&mut app, &f, &i, Action::RestorePart(DATA_PART));
-        assert!(swipe(&mut app, &f, &i, Confirm::Restore).is_empty(), "the users' own files wait for it as the data partition does");
-        assert_eq!(toast(&app), Some("恢复 data 分区或内部存储需先完成「解密」"));
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Restore).is_empty(),
+            "the users' own files wait for it as the data partition does"
+        );
+        assert_eq!(
+            toast(&app),
+            Some("恢复 data 分区或内部存储需先完成「解密」")
+        );
         tap(&mut app, &f, &i, Action::RestorePart(DATA_PART));
         app.data_waiting(None);
         let fx = swipe(&mut app, &f, &i, Confirm::Restore);
-        assert!(matches!(&fx[..], [Effect::Restore { parts: [false, false, true, true, false], .. }]), "{fx:?}");
+        assert!(
+            matches!(
+                &fx[..],
+                [Effect::Restore {
+                    parts: [false, false, false, false, true, true],
+                    ..
+                }]
+            ),
+            "{fx:?}"
+        );
     }
 
     #[test]
@@ -296,30 +479,58 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Restore, &f, &i);
         app.set_usb_drive(Some(UsbDrive::Shown));
-        app.set_backups(vec![found(Place::UsbDrive, 1_792_348_260, [true, false, true, true, false])]);
+        app.set_backups(vec![found(
+            Place::UsbDrive,
+            1_792_348_260,
+            [true, false, false, false, true, true],
+        )]);
         tap(&mut app, &f, &i, Action::OpenBackup(0));
         app.state.data = Data::Erased;
-        assert!(swipe(&mut app, &f, &i, Confirm::Restore).is_empty(), "there is nothing yet to put the files into");
-        assert_eq!(toast(&app), Some("data 分区已清除，需先启动一次系统，重新创建后再恢复"), "and the page says what makes it");
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Restore).is_empty(),
+            "there is nothing yet to put the files into"
+        );
+        assert_eq!(
+            toast(&app),
+            Some("data 分区已清除，需先启动一次系统，重新创建后再恢复"),
+            "and the page says what makes it"
+        );
         for k in [DATA_PART, MEDIA_PART] {
             tap(&mut app, &f, &i, Action::RestorePart(k));
         }
         let fx = swipe(&mut app, &f, &i, Confirm::Restore);
-        assert!(matches!(&fx[..], [Effect::Restore { parts: [true, false, false, false, false], .. }]), "the boot partitions wait for nothing: {fx:?}");
+        assert!(
+            matches!(
+                &fx[..],
+                [Effect::Restore {
+                    parts: [true, false, false, false, false, false],
+                    ..
+                }]
+            ),
+            "the boot partitions wait for nothing: {fx:?}"
+        );
     }
 
     #[test]
     fn a_backup_made_on_another_phone_is_not_restored_here() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Restore, &f, &i);
-        let mut other = found(Place::Storage, 1_792_348_260, [true; 5]);
+        let mut other = found(Place::Storage, 1_792_348_260, [true; 6]);
         other.held.as_mut().unwrap().device = "aurora".into();
-        let unread = BackupEntry { place: Place::Storage, name: "20261021-150000".into(), held: Err("read backup.toml: not found".into()) };
+        let unread = BackupEntry {
+            place: Place::Storage,
+            name: "20261021-150000".into(),
+            held: Err("read backup.toml: not found".into()),
+        };
         app.set_backups(vec![other, unread]);
         for k in 0..2 {
             tap(&mut app, &f, &i, Action::OpenBackup(k));
             let actions: Vec<Action> = app.frame(&f, &i).hits.iter().map(|h| h.action).collect();
-            assert!(!actions.contains(&Action::Confirm(Confirm::Restore)) && actions.contains(&Action::AskDelete), "{k}: {actions:?}");
+            assert!(
+                !actions.contains(&Action::Confirm(Confirm::Restore))
+                    && actions.contains(&Action::AskDelete),
+                "{k}: {actions:?}"
+            );
             app.key(Key::Back, 0);
         }
     }
@@ -329,16 +540,44 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Restore, &f, &i);
         app.data_waiting(None);
-        let entry = found(Place::Storage, 1_792_348_260, [true; 5]);
+        let entry = found(Place::Storage, 1_792_348_260, [true; 6]);
         app.set_backups(vec![entry.clone()]);
         tap(&mut app, &f, &i, Action::OpenBackup(0));
-        assert!(app.frame(&f, &i).hits.iter().all(|h| h.action != Action::Confirm(Confirm::DeleteBackup)), "asked for first");
+        assert!(
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .all(|h| h.action != Action::Confirm(Confirm::DeleteBackup)),
+            "asked for first"
+        );
         tap(&mut app, &f, &i, Action::AskDelete);
-        assert_eq!(swipe(&mut app, &f, &i, Confirm::DeleteBackup), vec![Effect::DeleteBackup { place: Place::Storage, name: entry.name }]);
-        assert!(app.backup_deleted(Err("Permission denied".into()), 0).is_empty());
-        assert_eq!(app.screen(), Screen::RestoreBackup, "not deleted, the page stays and says why");
-        assert_eq!(app.backup_deleted(Ok(()), 0), vec![Effect::FindBackups { storage: true, usb: false }]);
-        assert_eq!((app.screen(), app.state.restore.clone()), (Screen::Restore, None));
+        assert_eq!(
+            swipe(&mut app, &f, &i, Confirm::DeleteBackup),
+            vec![Effect::DeleteBackup {
+                place: Place::Storage,
+                name: entry.name
+            }]
+        );
+        assert!(
+            app.backup_deleted(Err("Permission denied".into()), 0)
+                .is_empty()
+        );
+        assert_eq!(
+            app.screen(),
+            Screen::RestoreBackup,
+            "not deleted, the page stays and says why"
+        );
+        assert_eq!(
+            app.backup_deleted(Ok(()), 0),
+            vec![Effect::FindBackups {
+                storage: true,
+                usb: false
+            }]
+        );
+        assert_eq!(
+            (app.screen(), app.state.restore.clone()),
+            (Screen::Restore, None)
+        );
     }
 
     #[test]
@@ -346,12 +585,167 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.set_usb_drive(Some(UsbDrive::Shown));
-        assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::Restore)), vec![Effect::FindBackups { storage: false, usb: true }]);
-        app.set_backups(vec![found(Place::UsbDrive, 1_792_348_260, [true; 5])]);
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::Open(Screen::Restore)),
+            vec![Effect::FindBackups {
+                storage: false,
+                usb: true
+            }]
+        );
+        app.set_backups(vec![found(Place::UsbDrive, 1_792_348_260, [true; 6])]);
         tap(&mut app, &f, &i, Action::OpenBackup(0));
-        assert_eq!(app.set_usb_drive(None), vec![Effect::FindBackups { storage: false, usb: false }]);
-        assert_eq!((app.screen(), app.state.restore.clone()), (Screen::Restore, None));
-        assert_eq!(app.set_usb_drive(Some(UsbDrive::Shown)), vec![Effect::FindBackups { storage: false, usb: true }], "one plugged in is looked in");
+        assert_eq!(
+            app.set_usb_drive(None),
+            vec![Effect::FindBackups {
+                storage: false,
+                usb: false
+            }]
+        );
+        assert_eq!(
+            (app.screen(), app.state.restore.clone()),
+            (Screen::Restore, None)
+        );
+        assert_eq!(
+            app.set_usb_drive(Some(UsbDrive::Shown)),
+            vec![Effect::FindBackups {
+                storage: false,
+                usb: true
+            }],
+            "one plugged in is looked in"
+        );
+    }
+
+    #[test]
+    fn an_encrypted_backup_asks_for_a_passphrase_before_it_starts() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Backup, &f, &i);
+        app.data_waiting(None);
+        tap(&mut app, &f, &i, Action::Toggle(Switch::Encrypt));
+        assert!(app.state.encrypt);
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Backup).is_empty(),
+            "no passphrase yet"
+        );
+        assert_eq!(app.screen(), Screen::BackupPassword);
+        app.key(Key::Back, 0);
+        assert_eq!(
+            app.screen(),
+            Screen::Backup,
+            "back without one leaves the backup unmade"
+        );
+        assert!(app.state.backup_password.is_empty());
+        tap(&mut app, &f, &i, Action::Toggle(Switch::Encrypt));
+        tap(&mut app, &f, &i, Action::Toggle(Switch::Encrypt));
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Backup).is_empty(),
+            "the passphrase page again"
+        );
+        assert_eq!(app.screen(), Screen::BackupPassword);
+        type_text(&mut app, &f, &i, "aaa");
+        assert!(
+            tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty(),
+            "a passphrase too short starts nothing"
+        );
+        assert_eq!(
+            (app.screen(), app.state.backup_password.as_str()),
+            (Screen::BackupPassword, "aaa")
+        );
+        type_text(&mut app, &f, &i, "bbb");
+        let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
+        assert_eq!(
+            app.screen(),
+            Screen::Backup,
+            "the page the backup starts from"
+        );
+        assert!(
+            app.state.backup_password.is_empty(),
+            "the passphrase is taken, not left typed"
+        );
+        assert_eq!(fx.len(), 1);
+        assert!(
+            matches!(&fx[0], Effect::Backup { password: Some(p), .. } if p.0 == "aaabbb"),
+            "{fx:?}"
+        );
+    }
+
+    #[test]
+    fn an_encrypted_backup_is_restored_only_with_its_passphrase() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Restore, &f, &i);
+        let mut entry = found(
+            Place::Storage,
+            1_792_348_260,
+            [true, true, true, true, false, false],
+        );
+        entry.held.as_mut().unwrap().encrypted = true;
+        app.set_backups(vec![entry]);
+        tap(&mut app, &f, &i, Action::OpenBackup(0));
+        assert!(
+            swipe(&mut app, &f, &i, Confirm::Restore).is_empty(),
+            "the passphrase is still to type"
+        );
+        assert_eq!(app.screen(), Screen::RestorePassword);
+        app.key(Key::Back, 0);
+        assert_eq!(app.screen(), Screen::RestoreBackup);
+        assert!(app.state.restore_password.is_empty());
+        assert!(swipe(&mut app, &f, &i, Confirm::Restore).is_empty());
+        assert_eq!(app.screen(), Screen::RestorePassword);
+        type_text(&mut app, &f, &i, "opensesame");
+        let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
+        assert_eq!(
+            app.screen(),
+            Screen::RestoreBackup,
+            "the page the restore starts from"
+        );
+        assert!(
+            app.state.restore_password.is_empty(),
+            "the passphrase is taken, not left typed"
+        );
+        assert_eq!(fx.len(), 1);
+        assert!(
+            matches!(&fx[0], Effect::Restore { password: Some(p), .. } if p.0 == "opensesame"),
+            "{fx:?}"
+        );
+    }
+
+    #[test]
+    fn a_backup_can_be_given_another_name() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Restore, &f, &i);
+        let entry = found(Place::Storage, 1_792_348_260, [true; 6]);
+        let old = entry.name.clone();
+        let made = entry.held.as_ref().unwrap().made;
+        app.set_backups(vec![entry]);
+        tap(&mut app, &f, &i, Action::OpenBackup(0));
+        tap(&mut app, &f, &i, Action::RenameBackup);
+        assert_eq!(app.screen(), Screen::RenameBackup);
+        assert_eq!(app.state.new_name, old);
+        type_text(&mut app, &f, &i, "x");
+        let new = format!("{old}x");
+        let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
+        assert_eq!(app.screen(), Screen::RestoreBackup);
+        assert_eq!(
+            fx,
+            vec![Effect::RenameBackup {
+                place: Place::Storage,
+                from: old.clone(),
+                to: new.clone()
+            }]
+        );
+        assert!(
+            app.backup_renamed(Place::Storage, &old, &new, Ok(()), 0)
+                .is_empty()
+        );
+        assert_eq!(app.state.backups[0].name, new);
+        assert_eq!(
+            app.state.backups[0].held.as_ref().unwrap().made,
+            made,
+            "the backup keeps what it holds"
+        );
+        assert_eq!(
+            app.state.restore.as_ref().map(|e| e.0.name.clone()),
+            Some(new)
+        );
     }
 
     #[test]
@@ -362,33 +756,83 @@ mod tests {
         app.backup_started(false, Place::Storage, true);
         assert_eq!(app.screen(), Screen::BackupJob);
         app.key(Key::Back, 0);
-        assert_eq!(app.screen(), Screen::BackupJob, "the page stays while the backup goes on");
+        assert_eq!(
+            app.screen(),
+            Screen::BackupJob,
+            "the page stays while the backup goes on"
+        );
         app.backup_plan(vec![("boot".into(), 200), ("system".into(), 800)]);
-        app.backup_at(BackupAt { item: 1, done: 400, of: 800, checking: false });
-        assert_eq!(tap(&mut app, &f, &i, Action::StopBackup), vec![Effect::StopBackup]);
+        app.backup_at(BackupAt {
+            item: 1,
+            done: 400,
+            of: 800,
+            checking: false,
+        });
+        assert_eq!(
+            tap(&mut app, &f, &i, Action::StopBackup),
+            vec![Effect::StopBackup]
+        );
         assert!(app.state.backup_job.as_ref().unwrap().stopping);
-        assert!(app.frame(&f, &i).hits.iter().all(|h| h.action != Action::StopBackup), "only one stop is asked for");
+        assert!(
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .all(|h| h.action != Action::StopBackup),
+            "only one stop is asked for"
+        );
         app.backup_ended(BackupEnd::Stopped, 0);
         tap_at(&mut app, &f, &i, Action::Back, 1000);
-        assert_eq!((app.screen(), app.state.backup_job.clone()), (Screen::Backup, None));
+        assert_eq!(
+            (app.screen(), app.state.backup_job.clone()),
+            (Screen::Backup, None)
+        );
     }
 
     #[test]
     fn a_restore_checks_its_backup_first_and_goes_on_to_its_end_once_writing() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Restore, &f, &i);
-        app.set_backups(vec![found(Place::Storage, 1_792_348_260, [true; 5])]);
+        app.set_backups(vec![found(Place::Storage, 1_792_348_260, [true; 6])]);
         tap(&mut app, &f, &i, Action::OpenBackup(0));
         app.backup_started(true, Place::Storage, true);
         app.backup_plan(vec![("boot".into(), 200), ("data".into(), 800)]);
-        app.backup_at(BackupAt { item: 0, done: 100, of: 200, checking: true });
-        let stops = |app: &mut App| app.frame(&f, &i).hits.iter().any(|h| h.action == Action::StopBackup);
-        assert!(stops(&mut app), "nothing is written while the backup is checked");
-        app.backup_at(BackupAt { item: 0, done: 0, of: 400, checking: false });
-        assert!(!stops(&mut app), "what has begun to be written is not stopped");
+        app.backup_at(BackupAt {
+            item: 0,
+            done: 100,
+            of: 200,
+            checking: true,
+        });
+        let stops = |app: &mut App| {
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .any(|h| h.action == Action::StopBackup)
+        };
+        assert!(
+            stops(&mut app),
+            "nothing is written while the backup is checked"
+        );
+        app.backup_at(BackupAt {
+            item: 0,
+            done: 0,
+            of: 400,
+            checking: false,
+        });
+        assert!(
+            !stops(&mut app),
+            "what has begun to be written is not stopped"
+        );
         app.key(Key::Back, 0);
         assert_eq!(app.screen(), Screen::BackupJob);
-        app.backup_ended(BackupEnd::Restored { unmade: vec!["/data/user/10".into()] }, 0);
-        assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 1000), vec![Effect::Reboot(Target::System)]);
+        app.backup_ended(
+            BackupEnd::Restored {
+                unmade: vec!["/data/user/10".into()],
+            },
+            0,
+        );
+        assert_eq!(
+            tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 1000),
+            vec![Effect::Reboot(Target::System)]
+        );
     }
 }

@@ -3,10 +3,10 @@
 //! Skyward puts in it finds the system's root in the data partition and
 //! starts the system's own first program from it.
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use skyward_block::area::Area;
-use skyward_bootimg::{lz4_legacy, BootImage, Ramdisk};
+use skyward_bootimg::{BootImage, Ramdisk, lz4_legacy};
 
 /// Where the program finds what to start, in the ramdisk.
 pub const START: &str = "skyward/system.toml";
@@ -37,9 +37,17 @@ impl Start {
 /// beside it, compressed as the vendor ramdisk before it is, for the kernel
 /// to read on into it from there.
 fn archive(at: &str, program: &[u8], start: &Start) -> Result<Vec<u8>> {
-    let mut rd = Ramdisk { entries: Vec::new() };
+    let mut rd = Ramdisk {
+        entries: Vec::new(),
+    };
     rd.add(at, 0o750, program.to_vec())?;
-    rd.add(START, 0o644, toml::to_string(start).context("write what the system starts with")?.into_bytes())?;
+    rd.add(
+        START,
+        0o644,
+        toml::to_string(start)
+            .context("write what the system starts with")?
+            .into_bytes(),
+    )?;
     Ok(lz4_legacy(&rd.archive()?))
 }
 
@@ -48,7 +56,10 @@ fn archive(at: &str, program: &[u8], start: &Start) -> Result<Vec<u8>> {
 /// `program` as the first program with `start` beside it.
 pub fn init_boot(template: &[u8], program: &[u8], start: &Start) -> Result<Vec<u8>> {
     let mut image = BootImage::parse(template).context("read the phone's init_boot image")?;
-    ensure!(image.kernel.is_empty(), "the phone's init_boot image holds a kernel");
+    ensure!(
+        image.kernel.is_empty(),
+        "the phone's init_boot image holds a kernel"
+    );
     image.ramdisk = archive(INIT, program, start)?;
     image.to_bytes()
 }
@@ -59,7 +70,9 @@ pub fn init_boot(template: &[u8], program: &[u8], start: &Start) -> Result<Vec<u
 pub fn with_start(own: &[u8], program: &[u8], start: &Start) -> Result<(Vec<u8>, u64)> {
     let mut image = BootImage::parse(own).context("read the system's init_boot image")?;
     let own_ramdisk = image.ramdisk.len() as u64;
-    image.ramdisk.extend_from_slice(&archive(MAP, program, start)?);
+    image
+        .ramdisk
+        .extend_from_slice(&archive(MAP, program, start)?);
     Ok((image.to_bytes()?, own_ramdisk))
 }
 
@@ -75,10 +88,16 @@ const LZ4_LEGACY: [u8; 4] = [0x02, 0x21, 0x4c, 0x18];
 /// init_boot partition may hold, an image that does not read among it, is
 /// none of Skyward's.
 pub fn starts_from_data(image: &[u8]) -> bool {
-    let Ok(image) = BootImage::parse(image) else { return false };
+    let Ok(image) = BootImage::parse(image) else {
+        return false;
+    };
     let mut before = image.ramdisk.len();
-    while let Some(at) = image.ramdisk[..before].windows(LZ4_LEGACY.len()).rposition(|opening| opening == LZ4_LEGACY) {
-        if Ramdisk::decode(&image.ramdisk[at..]).is_ok_and(|archive| archive.find(START).is_some()) {
+    while let Some(at) = image.ramdisk[..before]
+        .windows(LZ4_LEGACY.len())
+        .rposition(|opening| opening == LZ4_LEGACY)
+    {
+        if Ramdisk::decode(&image.ramdisk[at..]).is_ok_and(|archive| archive.find(START).is_some())
+        {
             return true;
         }
         before = at;
@@ -89,15 +108,26 @@ pub fn starts_from_data(image: &[u8]) -> bool {
 /// The init_boot image `image`, as [`init_boot`] made it or, for a system
 /// whose own ramdisk of `own_ramdisk` bytes comes first in it, as
 /// [`with_start`] did, made again with `program` and `start`.
-pub fn with_program(image: &[u8], own_ramdisk: Option<u64>, program: &[u8], start: &Start) -> Result<Vec<u8>> {
+pub fn with_program(
+    image: &[u8],
+    own_ramdisk: Option<u64>,
+    program: &[u8],
+    start: &Start,
+) -> Result<Vec<u8>> {
     let mut image = BootImage::parse(image).context("read the other system's init_boot image")?;
     let (kept, at) = match own_ramdisk {
         Some(bytes) => (bytes, MAP),
         None => (0, INIT),
     };
-    ensure!(kept <= image.ramdisk.len() as u64, "the other system's own ramdisk of {kept} bytes is longer than the {} its init_boot image holds", image.ramdisk.len());
+    ensure!(
+        kept <= image.ramdisk.len() as u64,
+        "the other system's own ramdisk of {kept} bytes is longer than the {} its init_boot image holds",
+        image.ramdisk.len()
+    );
     image.ramdisk.truncate(kept as usize);
-    image.ramdisk.extend_from_slice(&archive(at, program, start)?);
+    image
+        .ramdisk
+        .extend_from_slice(&archive(at, program, start)?);
     image.to_bytes()
 }
 
@@ -117,19 +147,39 @@ pub(crate) mod tests {
             cmdline: Box::new([0; 1536]),
             v4_signature_size: Some(0),
         };
-        let mut image = BootImage { header, kernel: Vec::new(), ramdisk: ramdisk.to_vec() }.to_bytes().unwrap();
+        let mut image = BootImage {
+            header,
+            kernel: Vec::new(),
+            ramdisk: ramdisk.to_vec(),
+        }
+        .to_bytes()
+        .unwrap();
         image.resize(1 << 20, 0);
         image
     }
 
     /// The entries of Skyward's archive `bytes`, by name, with their data.
     pub fn entries(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
-        assert_eq!(bytes[..4], [0x02, 0x21, 0x4c, 0x18], "LZ4 in the legacy framing, as the vendor ramdisk is");
-        Ramdisk::decode(bytes).unwrap().entries.into_iter().map(|e| (e.name, e.data)).collect()
+        assert_eq!(
+            bytes[..4],
+            [0x02, 0x21, 0x4c, 0x18],
+            "LZ4 in the legacy framing, as the vendor ramdisk is"
+        );
+        Ramdisk::decode(bytes)
+            .unwrap()
+            .entries
+            .into_iter()
+            .map(|e| (e.name, e.data))
+            .collect()
     }
 
     pub fn start() -> Start {
-        Start { id: "test".into(), filesystem: "ext4".into(), init: "/sbin/init".into(), root: area("/data/skyward/systems/test", 1 << 20) }
+        Start {
+            id: "test".into(),
+            filesystem: "ext4".into(),
+            init: "/sbin/init".into(),
+            root: area("/data/skyward/systems/test", 1 << 20),
+        }
     }
 
     #[test]
@@ -142,7 +192,10 @@ pub(crate) mod tests {
         let names: Vec<&str> = found.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, [INIT, "skyward", START]);
         assert_eq!(found[0].1, b"program");
-        assert_eq!(Start::parse(std::str::from_utf8(&found[2].1).unwrap()).unwrap(), start());
+        assert_eq!(
+            Start::parse(std::str::from_utf8(&found[2].1).unwrap()).unwrap(),
+            start()
+        );
     }
 
     #[test]
@@ -154,7 +207,11 @@ pub(crate) mod tests {
         let (theirs, ours) = back.ramdisk.split_at(b"its own archive".len());
         assert_eq!(theirs, b"its own archive", "its archive first");
         let names: Vec<String> = entries(ours).into_iter().map(|(n, _)| n).collect();
-        assert_eq!(names, ["skyward", MAP, START], "and no first program of Skyward's");
+        assert_eq!(
+            names,
+            ["skyward", MAP, START],
+            "and no first program of Skyward's"
+        );
     }
 
     #[test]
@@ -165,11 +222,23 @@ pub(crate) mod tests {
         assert!(starts_from_data(&ours));
         // A system's own archive is an LZ4 archive too, and Skyward's
         // comes after it.
-        let its_own = lz4_legacy(&Ramdisk { entries: Vec::new() }.archive().unwrap());
+        let its_own = lz4_legacy(
+            &Ramdisk {
+                entries: Vec::new(),
+            }
+            .archive()
+            .unwrap(),
+        );
         let (after_its_own, _) = with_start(&template(&its_own), b"program", &start()).unwrap();
         assert!(starts_from_data(&after_its_own));
-        assert!(!starts_from_data(&template(&its_own)), "the installed system's own image");
-        assert!(!starts_from_data(&template(b"stock")), "a ramdisk that is no archive");
+        assert!(
+            !starts_from_data(&template(&its_own)),
+            "the installed system's own image"
+        );
+        assert!(
+            !starts_from_data(&template(b"stock")),
+            "a ramdisk that is no archive"
+        );
         assert!(!starts_from_data(&vec![0u8; 1 << 20]), "a partition erased");
         assert!(!starts_from_data(b""));
     }
@@ -179,23 +248,43 @@ pub(crate) mod tests {
         let mut made = init_boot(&template(b"stock"), b"old program", &start()).unwrap();
         // As the store and the partition hold it: zeros to the partition's end.
         made.resize(made.len() + 8192, 0);
-        let again = BootImage::parse(&with_program(&made, None, b"new program", &start()).unwrap()).unwrap();
-        assert_eq!((again.header.header_version(), again.kernel.len()), (4, 0), "still an init_boot image");
+        let again = BootImage::parse(&with_program(&made, None, b"new program", &start()).unwrap())
+            .unwrap();
+        assert_eq!(
+            (again.header.header_version(), again.kernel.len()),
+            (4, 0),
+            "still an init_boot image"
+        );
         let found = entries(&again.ramdisk);
-        assert_eq!(found.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), [INIT, "skyward", START]);
+        assert_eq!(
+            found.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            [INIT, "skyward", START]
+        );
         assert_eq!(found[0].1, b"new program");
-        assert_eq!(Start::parse(std::str::from_utf8(&found[2].1).unwrap()).unwrap(), start());
+        assert_eq!(
+            Start::parse(std::str::from_utf8(&found[2].1).unwrap()).unwrap(),
+            start()
+        );
     }
 
     #[test]
     fn a_systems_own_ramdisk_is_kept_when_its_image_is_made_again() {
-        let (made, own_ramdisk) = with_start(&template(b"its own archive"), b"old program", &start()).unwrap();
-        let again = BootImage::parse(&with_program(&made, Some(own_ramdisk), b"new", &start()).unwrap()).unwrap();
+        let (made, own_ramdisk) =
+            with_start(&template(b"its own archive"), b"old program", &start()).unwrap();
+        let again =
+            BootImage::parse(&with_program(&made, Some(own_ramdisk), b"new", &start()).unwrap())
+                .unwrap();
         let (theirs, ours) = again.ramdisk.split_at(own_ramdisk as usize);
         assert_eq!(theirs, b"its own archive");
         let found = entries(ours);
-        assert_eq!(found.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["skyward", MAP, START]);
+        assert_eq!(
+            found.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            ["skyward", MAP, START]
+        );
         assert_eq!(found[1].1, b"new");
-        assert!(with_program(&made, Some(1 << 20), b"new", &start()).is_err(), "an own ramdisk longer than the image's");
+        assert!(
+            with_program(&made, Some(1 << 20), b"new", &start()).is_err(),
+            "an own ramdisk longer than the image's"
+        );
     }
 }

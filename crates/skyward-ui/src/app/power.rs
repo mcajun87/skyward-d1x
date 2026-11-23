@@ -47,13 +47,20 @@ impl App {
     pub fn plugged(&mut self, now: u64, cable_in: bool) {
         if cable_in {
             let dark = !self.display_on;
-            let mut shown = self.charging.take().map_or(Fade::hidden(CHARGE_SHOW, CHARGE_HIDE), |c| c.shown);
+            let mut shown = self
+                .charging
+                .take()
+                .map_or(Fade::hidden(CHARGE_SHOW, CHARGE_HIDE), |c| c.shown);
             if dark {
                 shown.jump(true);
             } else {
                 shown.set(true, now);
             }
-            self.charging = Some(Charging { since: now, shown, dark_after: dark });
+            self.charging = Some(Charging {
+                since: now,
+                shown,
+                dark_after: dark,
+            });
             self.dirty = true;
         }
         if self.display_on {
@@ -87,7 +94,8 @@ impl App {
     /// Whether the panel lit so recently that a touch or key should only
     /// keep it awake.
     pub(super) fn just_woke(&self, now: u64) -> bool {
-        self.woke_at.is_some_and(|w| now.saturating_sub(w) < WAKE_GUARD_MS)
+        self.woke_at
+            .is_some_and(|w| now.saturating_sub(w) < WAKE_GUARD_MS)
     }
 
     /// Turn the panel off: the content goes dark under the backlight it has
@@ -141,9 +149,17 @@ mod tests {
     fn power_key_turns_the_panel_off_and_on() {
         let mut app = App::new(Screen::Home, W, H, PPD);
         assert!(app.key(Key::Power, 0).is_empty());
-        assert_eq!(app.panel(0), Some(SLIDER_START), "it waits for volume down first");
+        assert_eq!(
+            app.panel(0),
+            Some(SLIDER_START),
+            "it waits for volume down first"
+        );
         assert_eq!(app.deadline(0), Some(CHORD_MS));
-        assert_eq!(app.tick(CHORD_MS), vec![Effect::Ticks], "held on alone, it turns the panel off, ticking the motor");
+        assert_eq!(
+            app.tick(CHORD_MS),
+            vec![Effect::Ticks],
+            "held on alone, it turns the panel off, ticking the motor"
+        );
         assert!(!app.display_on());
         assert!(app.key_up(Key::Power, CHORD_MS + 50).is_empty());
         assert!(app.key(Key::Power, CHORD_MS + 60).is_empty());
@@ -151,7 +167,10 @@ mod tests {
         assert!(app.key_up(Key::Power, CHORD_MS + 100).is_empty());
         assert!(app.key(Key::Power, 1000).is_empty());
         assert_eq!(app.key_up(Key::Power, 1050), vec![Effect::Ticks]);
-        assert!(!app.display_on(), "let go sooner, it turns the panel off then");
+        assert!(
+            !app.display_on(),
+            "let go sooner, it turns the panel off then"
+        );
     }
 
     #[test]
@@ -162,10 +181,17 @@ mod tests {
         assert!(app.tick(1400).is_empty(), "once");
         app.state.vibrate = false;
         press(&mut app, Key::Power, 2000);
-        assert_eq!(press(&mut app, Key::Power, 3000), vec![Effect::Ticks], "with vibration off too");
+        assert_eq!(
+            press(&mut app, Key::Power, 3000),
+            vec![Effect::Ticks],
+            "with vibration off too"
+        );
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
-        assert!(app.tick(OFF).is_empty(), "but not the screen going off by itself");
+        assert!(
+            app.tick(OFF).is_empty(),
+            "but not the screen going off by itself"
+        );
         assert!(!app.display_on());
     }
 
@@ -177,7 +203,11 @@ mod tests {
         app.state.vibrate = true;
         assert!(app.key(Key::Power, 0).is_empty());
         let shot = vec![Effect::Haptic, Effect::Screenshot { storage: false }];
-        assert_eq!(app.key(Key::VolumeDown, CHORD_MS - 1), shot, "volume down follows in time");
+        assert_eq!(
+            app.key(Key::VolumeDown, CHORD_MS - 1),
+            shot,
+            "volume down follows in time"
+        );
         assert_eq!(app.chord, None, "nothing is left waiting");
         assert!(app.tick(1000).is_empty());
         assert!(app.key_up(Key::Power, 1000).is_empty());
@@ -196,7 +226,10 @@ mod tests {
         app.state.vibrate = false;
         app.data_waiting(None);
         app.key(Key::Power, 3000);
-        assert_eq!(app.key(Key::VolumeDown, 3010), vec![Effect::Screenshot { storage: true }]);
+        assert_eq!(
+            app.key(Key::VolumeDown, 3010),
+            vec![Effect::Screenshot { storage: true }]
+        );
     }
 
     #[test]
@@ -208,11 +241,21 @@ mod tests {
         assert!(!app.keys, "volume down waits for the power key first");
         assert!(app.tick(CHORD_MS).is_empty());
         assert!(app.keys, "then lights a control on its own");
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))));
-        assert!(app.key(Key::Power, CHORD_MS + 10).is_empty(), "the power key came too late");
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search)))
+        );
+        assert!(
+            app.key(Key::Power, CHORD_MS + 10).is_empty(),
+            "the power key came too late"
+        );
         assert!(app.key_up(Key::VolumeDown, CHORD_MS + 20).is_empty());
         assert!(app.tick(CHORD_MS * 2 + 10).is_empty());
-        assert_eq!(app.screen(), Screen::Home, "the power key waits on the control lit until it comes up");
+        assert_eq!(
+            app.screen(),
+            Screen::Home,
+            "the power key waits on the control lit until it comes up"
+        );
         app.key_up(Key::Power, CHORD_MS * 3);
         assert_eq!(app.screen(), Screen::Search, "and then works it");
     }
@@ -221,13 +264,25 @@ mod tests {
     fn a_screenshot_says_where_it_went() {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.screenshot_saved(Ok(Shot::Album), 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("截图已保存到相册"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("截图已保存到相册")
+        );
         app.screenshot_saved(Ok(Shot::Held), 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("截图已暂存，解密后存入相册"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("截图已暂存，解密后存入相册")
+        );
         app.screenshot_saved(Err("No space left on device".into()), 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("截图保存失败：No space left on device"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("截图保存失败：No space left on device")
+        );
         app.screenshots_not_kept("Read-only file system", 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("暂存的截图未能存入相册：Read-only file system"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("暂存的截图未能存入相册：Read-only file system")
+        );
     }
 
     /// With the default two minutes, when the panel dims and when it goes
@@ -243,17 +298,32 @@ mod tests {
         app.tick(DIMS - 1);
         assert_eq!(app.panel(DIMS - 1), Some(SLIDER_START));
         app.tick(DIMS);
-        assert_eq!(app.deadline(DIMS), Some(DIMS + BACKLIGHT_STEP_MS), "the backlight steps down a frame at a time");
+        assert_eq!(
+            app.deadline(DIMS),
+            Some(DIMS + BACKLIGHT_STEP_MS),
+            "the backlight steps down a frame at a time"
+        );
         let midway = app.panel(DIMS + 250).unwrap();
-        assert!(midway < SLIDER_START && midway > dim_level(SLIDER_START), "{midway}");
+        assert!(
+            midway < SLIDER_START && midway > dim_level(SLIDER_START),
+            "{midway}"
+        );
         assert_eq!(app.panel(DIMS + 500), Some(dim_level(SLIDER_START)));
         assert_eq!(app.deadline(DIMS + 500), Some(OFF), "dim until it goes off");
         app.tick(OFF);
         assert!(!app.display_on());
-        assert_eq!(app.panel(OFF), Some(dim_level(SLIDER_START)), "the content goes dark under the dim backlight");
+        assert_eq!(
+            app.panel(OFF),
+            Some(dim_level(SLIDER_START)),
+            "the content goes dark under the dim backlight"
+        );
         app.tick(OFF + 365);
         assert_eq!(app.panel(OFF + 365), None);
-        assert_eq!(app.deadline(OFF + 365), None, "nothing to wait for on a dark panel");
+        assert_eq!(
+            app.deadline(OFF + 365),
+            None,
+            "nothing to wait for on a dark panel"
+        );
     }
 
     #[test]
@@ -289,8 +359,16 @@ mod tests {
         app.touch(Touch::Down(x, y), &f, DIMS + 600);
         app.touch(Touch::Up, &f, DIMS + 650);
         assert_eq!(app.screen(), Screen::Settings, "the tap counts");
-        assert_eq!(app.panel(DIMS + 800), Some(SLIDER_START), "back to full brightness");
-        assert_eq!(app.deadline(DIMS + 800), Some(DIMS + 650 + DIMS), "the wait starts over");
+        assert_eq!(
+            app.panel(DIMS + 800),
+            Some(SLIDER_START),
+            "back to full brightness"
+        );
+        assert_eq!(
+            app.deadline(DIMS + 800),
+            Some(DIMS + 650 + DIMS),
+            "the wait starts over"
+        );
     }
 
     #[test]
@@ -308,7 +386,11 @@ mod tests {
         press(&mut app, Key::Power, 200);
         assert!(app.display_on());
         tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 700);
-        assert_eq!(app.screen(), Screen::Settings, "a tap on the lit panel does");
+        assert_eq!(
+            app.screen(),
+            Screen::Settings,
+            "a tap on the lit panel does"
+        );
     }
 
     #[test]
@@ -323,15 +405,33 @@ mod tests {
         assert!(app.display_on(), "the cable coming out lights the panel");
         assert!(!app.charge_shown(), "and shows the page");
         assert_eq!(app.panel(pulled), Some(SLIDER_START));
-        assert_eq!(app.deadline(pulled + 520), Some(pulled + DIMS), "for the screen-off time, once the content is up");
+        assert_eq!(
+            app.deadline(pulled + 520),
+            Some(pulled + DIMS),
+            "for the screen-off time, once the content is up"
+        );
         app.tick(pulled + DIMS);
-        assert_eq!(app.panel(pulled + DIMS + 500), Some(dim_level(SLIDER_START)));
+        assert_eq!(
+            app.panel(pulled + DIMS + 500),
+            Some(dim_level(SLIDER_START))
+        );
         let again = pulled + DIMS + 600;
         app.plugged(again, false);
-        assert_eq!(app.panel(again + 150), Some(SLIDER_START), "a cable coming out brightens a lit panel");
-        assert_eq!(app.deadline(again + 150), Some(again + DIMS), "and the wait starts over");
+        assert_eq!(
+            app.panel(again + 150),
+            Some(SLIDER_START),
+            "a cable coming out brightens a lit panel"
+        );
+        assert_eq!(
+            app.deadline(again + 150),
+            Some(again + DIMS),
+            "and the wait starts over"
+        );
         press(&mut app, Key::Power, again + 200);
-        assert!(!app.display_on(), "the power key turns it off at once, as ever");
+        assert!(
+            !app.display_on(),
+            "the power key turns it off at once, as ever"
+        );
     }
 
     #[test]
@@ -343,13 +443,23 @@ mod tests {
         assert_eq!(app.panel(365), None);
         let plugged = 1000;
         app.plugged(plugged, true);
-        assert!(app.display_on() && app.charge_shown(), "the charging screen lights the panel");
-        assert_eq!(app.deadline(plugged + 1000), Some(0), "its tide moves a frame at a time");
+        assert!(
+            app.display_on() && app.charge_shown(),
+            "the charging screen lights the panel"
+        );
+        assert_eq!(
+            app.deadline(plugged + 1000),
+            Some(0),
+            "its tide moves a frame at a time"
+        );
         app.tick(plugged + CHARGE_MS - 1);
         assert!(app.display_on());
         app.tick(plugged + CHARGE_MS);
         assert!(!app.display_on(), "then the panel goes dark again");
-        assert!(app.panel(plugged + CHARGE_MS + 100).is_some(), "as the charging screen goes dark");
+        assert!(
+            app.panel(plugged + CHARGE_MS + 100).is_some(),
+            "as the charging screen goes dark"
+        );
         app.tick(plugged + CHARGE_MS + 365);
         assert_eq!(app.panel(plugged + CHARGE_MS + 365), None);
         assert!(app.charging.is_none(), "and goes with it");
@@ -363,7 +473,10 @@ mod tests {
         assert!(app.display_on() && app.charge_shown());
         app.tick(1000 + CHARGE_MS);
         assert!(app.display_on(), "the panel stays lit");
-        assert!(!app.charge_shown(), "as the charging screen goes for the page");
+        assert!(
+            !app.charge_shown(),
+            "as the charging screen goes for the page"
+        );
         app.tick(1000 + CHARGE_MS + 300);
         assert!(app.charging.is_none());
     }
@@ -391,7 +504,13 @@ mod tests {
 
     #[test]
     fn the_charging_screen_shows_the_level_over_a_tide_of_light() {
-        let (f, i) = (fonts(), DeviceInfo { battery: Some(battery_at(64, Charge::Charging)), ..info() });
+        let (f, i) = (
+            fonts(),
+            DeviceInfo {
+                battery: Some(battery_at(64, Charge::Charging)),
+                ..info()
+            },
+        );
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
         press(&mut app, Key::Power, 0);
@@ -405,7 +524,10 @@ mod tests {
         };
         assert_eq!(px(0, 0), [0, 0, 0], "on black");
         let foot = px(W / 2, H - 4);
-        assert!(foot[2] > 40 && foot[2] > foot[0] * 4 && foot[2] > foot[1] * 2, "the tide's light at the foot is blue: {foot:?}");
+        assert!(
+            foot[2] > 40 && foot[2] > foot[0] * 4 && foot[2] > foot[1] * 2,
+            "the tide's light at the foot is blue: {foot:?}"
+        );
     }
 
     #[test]
@@ -413,8 +535,15 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
         press(&mut app, Key::Power, 1000);
-        assert!(!app.display_on(), "touches and keys take the screen as off at once");
-        assert_eq!(app.panel(1000), Some(SLIDER_START), "while its content goes dark under the backlight it had");
+        assert!(
+            !app.display_on(),
+            "touches and keys take the screen as off at once"
+        );
+        assert_eq!(
+            app.panel(1000),
+            Some(SLIDER_START),
+            "while its content goes dark under the backlight it had"
+        );
         assert_eq!(app.deadline(1000), Some(0), "a frame at a time");
         assert_eq!(app.panel(1300), Some(SLIDER_START));
         app.tick(1365);
@@ -431,7 +560,10 @@ mod tests {
         press(&mut app, Key::Power, 1100);
         assert!(app.display_on(), "the power key lit it again");
         let level = app.curtain.level(1100);
-        assert!(level > 0.0 && level < 1.0, "from as dark as it had gone: {level}");
+        assert!(
+            level > 0.0 && level < 1.0,
+            "from as dark as it had gone: {level}"
+        );
         assert_eq!(app.curtain.level(1100 + 520), 1.0);
     }
 
@@ -444,7 +576,14 @@ mod tests {
         app.tick(365);
         press(&mut app, Key::Power, 1000);
         let mut c = Canvas::new(W, H);
-        let light = |c: &Canvas| c.data.as_chunks::<4>().0.iter().map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum::<u64>();
+        let light = |c: &Canvas| {
+            c.data
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64)
+                .sum::<u64>()
+        };
         app.compose(&mut c, &f, &i, "12:00", 1000);
         let first = light(&c);
         app.compose(&mut c, &f, &i, "12:00", 1260);
@@ -452,7 +591,10 @@ mod tests {
         app.compose(&mut c, &f, &i, "12:00", 1520);
         let full = light(&c);
         assert_eq!(first, 0, "black as the panel lights");
-        assert!(halfway > full / 2 && halfway < full, "{halfway} of {full} halfway through");
+        assert!(
+            halfway > full / 2 && halfway < full,
+            "{halfway} of {full} halfway through"
+        );
     }
 
     #[test]
@@ -492,12 +634,22 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
         press(&mut app, Key::Power, 0);
-        app.install(Event::Finished(Outcome::Installed { slot: Slot::A, wipe: false }), 100);
+        app.install(
+            Event::Finished(Outcome::Installed {
+                slot: Slot::A,
+                wipe: false,
+            }),
+            100,
+        );
         assert!(app.display_on(), "the finished install lit the panel");
         // A finger reaching for the phone lands on 重启到系统; within the
         // guard it only keeps the panel awake.
         assert!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 200).is_empty());
-        assert_eq!(app.screen(), Screen::Installing, "the stray tap did not reboot");
+        assert_eq!(
+            app.screen(),
+            Screen::Installing,
+            "the stray tap did not reboot"
+        );
         // Past the guard the same tap reboots.
         assert_eq!(
             tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 700),
@@ -509,7 +661,13 @@ mod tests {
     fn a_finger_held_as_the_panel_goes_off_lets_go() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Reboot, W, H, PPD);
-        let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::Reboot)).unwrap().rect;
+        let track = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Confirm(Confirm::Reboot))
+            .unwrap()
+            .rect;
         let y = track.centre().1;
         app.touch(Touch::Down(track.x + track.h / 2.0, y), &f, 0);
         app.touch(Touch::Move(track.x + track.w * 0.6, y), &f, 10);
@@ -517,7 +675,10 @@ mod tests {
         press(&mut app, Key::Power, 20);
         assert_eq!(app.state.confirm, 0.0, "the knob is back at the start");
         app.touch(Touch::Move(track.x + track.w, y), &f, 30);
-        assert!(app.touch(Touch::Up, &f, 40).is_empty(), "no reboot from a dark panel");
+        assert!(
+            app.touch(Touch::Up, &f, 40).is_empty(),
+            "no reboot from a dark panel"
+        );
         assert!(!app.display_on());
     }
 
@@ -539,15 +700,31 @@ mod tests {
         press(&mut app, Key::Power, 0);
         app.install(Event::Checking { size: 1 << 20 }, 10);
         assert!(!app.display_on(), "reading the package does not light it");
-        app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: slotted(&["dtbo"]) }, 20);
+        app.install(
+            Event::Image {
+                kind: ImageKind::Dtbo,
+                size: 1 << 20,
+                partitions: slotted(&["dtbo"]),
+            },
+            20,
+        );
         assert!(app.display_on(), "an image waiting for its partition does");
         app.tick(20 + 520);
         assert_eq!(app.deadline(20 + 520), Some(20 + DIMS));
-        app.state.install = Install::Flashing { partition: "dtbo".into(), stage: None };
+        app.state.install = Install::Flashing {
+            partition: "dtbo".into(),
+            stage: None,
+        };
         press(&mut app, Key::Power, 500);
         app.install(Event::Progress(Stage::Flashing { done: 1, total: 2 }), 510);
         assert!(!app.display_on(), "progress does not");
-        app.install(Event::Finished(Outcome::Flashed { partition: "dtbo".into(), slots: vec![Slot::A] }), 520);
+        app.install(
+            Event::Finished(Outcome::Flashed {
+                partition: "dtbo".into(),
+                slots: vec![Slot::A],
+            }),
+            520,
+        );
         assert!(app.display_on(), "the end does");
     }
 
